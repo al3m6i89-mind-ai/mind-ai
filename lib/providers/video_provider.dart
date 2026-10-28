@@ -13,6 +13,14 @@ class VideoProvider {
 
   final SettingsService settings;
 
+  /// True when a real text-to-video backend is configured. Otherwise the app
+  /// makes a free cinematic clip from a generated image on the phone.
+  bool get hasRealProvider => switch (settings.videoBackend) {
+        VideoBackend.pollinations => settings.pollinationsToken.isNotEmpty,
+        VideoBackend.replicate => settings.replicateKey.isNotEmpty,
+        VideoBackend.custom => settings.customVideoUrl.isNotEmpty,
+      };
+
   Future<GeneratedVideo> generate(String prompt, {int seconds = 5}) async {
     try {
       return switch (settings.videoBackend) {

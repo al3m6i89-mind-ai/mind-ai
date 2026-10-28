@@ -105,7 +105,7 @@ class _GeneratorPageState extends State<GeneratorPage> {
         _busy = true;
         _status = 'أحذف الخلفية… ✂️';
       });
-      final png = await MediaTools.cutout(_photo!);
+      final png = await MediaTools.removeBackground(_photo!);
       await library.save(png, CreationKind.sticker, 'حذف الخلفية', ext: 'png');
       await subs.consume(_usage);
       setState(() {

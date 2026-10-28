@@ -73,7 +73,7 @@ class _Thumb extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final isVideo = c.kind == CreationKind.video;
+    final isVideo = c.kind == CreationKind.video && !c.path.endsWith('.gif');
     return GestureDetector(
       onTap: () => showModalBottomSheet(
         context: context,

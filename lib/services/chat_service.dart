@@ -101,7 +101,7 @@ class ChatService extends ChangeNotifier {
   }
 
   static final _bgIntent = RegExp(
-    r'(احذف|حذف|ازل|أزل|إزالة|ازالة|شيل|امسح|مسح|قص|فرّغ|فرغ).{0,8}(الخلفي|خلفي)|remove.{0,6}(background|bg)|cutout',
+    r'(احذف|حذف|اخذف|خذف|إحذف|ازل|أزل|إزالة|ازالة|اشيل|شيل|امسح|مسح|قص|فرّغ|فرغ|بدون|شفاف).{0,10}(الخلفي|خلفي|خلفيه)|(الخلفي|خلفي).{0,10}(شفاف)|remove.{0,6}(background|bg)|cutout|no ?background',
     caseSensitive: false,
   );
   static final _editIntent = RegExp(
@@ -133,7 +133,7 @@ class ChatService extends ChangeNotifier {
         _subs.ensure(Usage.sticker);
         reply.text = '✂️ أحذف الخلفية…';
         notifyListeners();
-        final png = await MediaTools.cutout(image);
+        final png = await MediaTools.removeBackground(image);
         final saved = await _library.save(png, CreationKind.sticker, trimmed, ext: 'png');
         await _subs.consume(Usage.sticker);
         _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تم حذف الخلفية ✅ اضغط على الصورة لمشاركتها.', imageUrl: saved.path));

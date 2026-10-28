@@ -21,6 +21,8 @@ void main() {
     }
     final kb = await MediaTools.kenBurns(img.encodeJpg(src));
     expect(img.decodeGif(kb)!.numFrames, 30);
+    final kb5 = await MediaTools.kenBurns(img.encodeJpg(src), seconds: 5);
+    expect(img.decodeGif(kb5)!.numFrames, 50);
   });
 
   test('cutout keeps size and clears a flat background', () async {

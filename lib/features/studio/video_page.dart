@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../app/theme.dart';
+import '../../providers/image_gen.dart';
 import '../../providers/video_provider.dart';
 import '../../services/chat_service.dart';
 import '../../services/library_service.dart';
@@ -27,6 +28,7 @@ class _VideoPageState extends State<VideoPage> {
   int _mode = 0; // 0 = text to video (AI), 1 = animate a photo (free, on device)
   int _seconds = 5;
   bool _busy = false;
+  String _status = '';
   Creation? _result;
   VideoPlayerController? _player;
 
@@ -35,15 +37,35 @@ class _VideoPageState extends State<VideoPage> {
     if (text.isEmpty) return;
     final subs = context.read<SubscriptionService>();
     final video = context.read<VideoProvider>();
+    final images = context.read<ImageGen>();
     final chat = context.read<ChatService>();
     final library = context.read<LibraryService>();
+    FocusScope.of(context).unfocus();
     try {
       subs.ensure(Usage.video);
-      setState(() => _busy = true);
+      setState(() {
+        _busy = true;
+        _status = 'أفهم فكرتك…';
+      });
       final english = await chat.englishPrompt(text);
-      final out = await video.generate(english, seconds: _seconds);
-      final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
-      final saved = await library.save(Uint8List.fromList(bytes), CreationKind.video, text);
+      Creation saved;
+      if (video.hasRealProvider) {
+        setState(() => _status = 'أصنع الفيديو… قد يأخذ دقيقة أو أكثر');
+        final out = await video.generate(english, seconds: _seconds);
+        final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
+        saved = await library.save(Uint8List.fromList(bytes), CreationKind.video, text);
+      } else {
+        // Free path, no key needed: an AI keyframe plus a cinematic camera move on the phone.
+        setState(() => _status = 'أرسم المشهد… 🎨');
+        final frame = await images.generate(
+          '$english, cinematic film still, dramatic lighting, wide shot, highly detailed',
+          width: 1344,
+          height: 768,
+        );
+        setState(() => _status = 'أحرّك الكاميرا… 🎬');
+        final gif = await MediaTools.kenBurns(frame.bytes, seconds: _seconds);
+        saved = await library.save(gif, CreationKind.video, text, ext: 'gif');
+      }
       await subs.consume(Usage.video);
       await _show(saved);
     } catch (e) {
@@ -59,7 +81,7 @@ class _VideoPageState extends State<VideoPage> {
     final library = context.read<LibraryService>();
     setState(() => _busy = true);
     try {
-      final gif = await MediaTools.kenBurns(await x.readAsBytes());
+      final gif = await MediaTools.kenBurns(await x.readAsBytes(), seconds: _seconds);
       final saved = await library.save(gif, CreationKind.animatedSticker, 'صورة متحركة', ext: 'gif');
       await _show(saved);
     } catch (e) {
@@ -72,7 +94,7 @@ class _VideoPageState extends State<VideoPage> {
   Future<void> _show(Creation c) async {
     await _player?.dispose();
     _player = null;
-    if (c.path.endsWith('.mp4')) {
+    if (!c.path.endsWith('.gif')) {
       _player = VideoPlayerController.file(File(c.path));
       await _player!.initialize();
       await _player!.setLooping(true);
@@ -131,17 +153,14 @@ class _VideoPageState extends State<VideoPage> {
             ),
             const SizedBox(height: 16),
             GradientButton(
-              label: _busy ? 'جاري إنشاء الفيديو… قد يستغرق دقيقة أو أكثر' : 'أنشئ الفيديو',
+              label: _busy ? _status : 'أنشئ الفيديو',
               icon: Icons.movie_creation_outlined,
               gradient: MindColors.fresh,
               loading: _busy,
               onPressed: _fromText,
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'مزوّد الفيديو تقدر تغيّره من الإعدادات. للاستخدام المجاني بدون حدود جرّب "حرّك صورة".',
-              style: TextStyle(fontSize: 12, color: MindColors.muted),
-            ),
+            const SizedBox(height: 10),
+            _ModeNote(real: context.read<VideoProvider>().hasRealProvider),
           ] else ...[
             const Text('اختر صورة وسنحوّلها لمقطع متحرك بتقريب وحركة كاميرا سينمائية، على جوالك مباشرة وبدون أي تكلفة.'),
             const SizedBox(height: 16),
@@ -194,4 +213,32 @@ class _VideoPageState extends State<VideoPage> {
       ),
     );
   }
+}
+
+class _ModeNote extends StatelessWidget {
+  const _ModeNote({required this.real});
+  final bool real;
+
+  @override
+  Widget build(BuildContext context) => Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          color: MindColors.mint.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(14),
+        ),
+        child: Row(
+          children: [
+            Text(real ? '🎥' : '✨', style: const TextStyle(fontSize: 20)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                real
+                    ? 'فيديو ذكاء اصطناعي حقيقي من المزوّد اللي اخترته.'
+                    : 'مجاني: نرسم مشهدك بالذكاء الاصطناعي ونحرّك الكاميرا عليه بشكل سينمائي.',
+                style: const TextStyle(fontSize: 13),
+              ),
+            ),
+          ],
+        ),
+      );
 }
