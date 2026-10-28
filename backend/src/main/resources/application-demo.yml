@@ -1,0 +1,12 @@
+# Public demo server: simulated phones, no payments, no outgoing email.
+spring:
+  flyway:
+    locations: classpath:db/migration,classpath:db/dev
+app:
+  environment: demo
+  mail:
+    transport: log
+  billing:
+    allow-unpaid-dev-subscriptions: true
+  account:
+    auto-verify-email: true

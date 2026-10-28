@@ -43,5 +43,5 @@ data class AppProperties(
 
     data class Billing(val allowUnpaidDevSubscriptions: Boolean)
 
-    data class Account(val deletionGraceDays: Long)
+    data class Account(val deletionGraceDays: Long, val autoVerifyEmail: Boolean = false)
 }

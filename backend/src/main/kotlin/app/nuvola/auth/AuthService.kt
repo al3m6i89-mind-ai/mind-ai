@@ -52,12 +52,13 @@ class AuthService(
             email = normalized,
             passwordHash = passwords.encode(password),
             displayName = displayName.trim(),
+            emailVerified = props.account.autoVerifyEmail,
             locale = if (locale == "en") "en" else "ar",
             termsVersion = props.termsVersion,
             termsAcceptedAt = now,
         ))
         audit.user(user.id, "account.registered", "user", user.id)
-        sendVerification(user)
+        if (!user.emailVerified) sendVerification(user)
         return openSession(user, clientLabel, ip)
     }
 

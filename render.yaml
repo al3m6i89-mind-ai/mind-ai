@@ -1,0 +1,37 @@
+# Render Blueprint for the public demo server: one API service and one PostgreSQL database.
+# The demo runs simulated phones only; see README "What is real and what is not yet".
+services:
+  - type: web
+    name: nuvola-api-zuhair
+    runtime: docker
+    plan: free
+    region: frankfurt
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: SPRING_PROFILES_ACTIVE
+        value: demo
+      - key: DEVICE_PROVIDER
+        value: mock
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JAVA_TOOL_OPTIONS
+        value: -XX:MaxRAMPercentage=70 -XX:+UseSerialGC
+      - key: DB_HOST
+        fromDatabase: { name: nuvola-db, property: host }
+      - key: DB_PORT
+        fromDatabase: { name: nuvola-db, property: port }
+      - key: DB_NAME
+        fromDatabase: { name: nuvola-db, property: database }
+      - key: DATABASE_USER
+        fromDatabase: { name: nuvola-db, property: user }
+      - key: DATABASE_PASSWORD
+        fromDatabase: { name: nuvola-db, property: password }
+
+databases:
+  - name: nuvola-db
+    plan: free
+    region: frankfurt
+    databaseName: nuvola
+    user: nuvola

@@ -16,6 +16,7 @@ class StartupGuards(private val props: AppProperties) {
                 add("JWT_SECRET must be set to a random value of at least 32 characters")
             }
             if (props.mail.transport == "log") add("MAIL_TRANSPORT=log is not allowed in production")
+            if (props.account.autoVerifyEmail) add("auto-verified email is not allowed in production")
         }
         check(problems.isEmpty()) { "Unsafe production configuration: ${problems.joinToString("; ")}" }
     }
