@@ -1,0 +1,12 @@
+spring:
+  datasource:
+    url: jdbc:postgresql://localhost:5432/nuvola_test
+  flyway:
+    locations: classpath:db/migration,classpath:db/dev
+    clean-disabled: false
+app:
+  devices:
+    job-poll-interval: PT0.1S
+    mock-step-delay: PT0.05S
+  billing:
+    allow-unpaid-dev-subscriptions: true

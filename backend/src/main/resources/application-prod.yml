@@ -1,0 +1,9 @@
+app:
+  environment: production
+  mail:
+    transport: smtp
+  billing:
+    allow-unpaid-dev-subscriptions: false
+springdoc:
+  swagger-ui:
+    enabled: false
