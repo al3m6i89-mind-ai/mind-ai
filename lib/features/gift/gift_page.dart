@@ -9,6 +9,7 @@ import 'package:video_player/video_player.dart';
 
 import '../../app/theme.dart';
 import '../../providers/image_gen.dart';
+import '../../providers/ai_models.dart';
 import '../../providers/tools.dart';
 import '../../providers/video_provider.dart';
 import '../../services/chat_service.dart';
@@ -34,7 +35,7 @@ class GiftPage extends StatefulWidget {
 class _GiftPageState extends State<GiftPage> {
   final _prompt = TextEditingController();
   final _scene = TextEditingController();
-  late ImageTool _ai = ImageTool.byId(context.read<SettingsService>().imageToolId);
+  late ImageTool _ai = ImageTool.bestClean(context.read<SettingsService>());
   GiftEffect _effect = GiftEffect.spin3d;
   bool _pro = false;
   bool _busy = false;
@@ -134,17 +135,26 @@ class _GiftPageState extends State<GiftPage> {
   /// keyed to transparency on the phone and the effects are layered on top.
   Future<void> _animatePro(String english, String? story, VideoTool tool, LibraryService library) async {
     final video = context.read<VideoProvider>();
+    final settings = context.read<SettingsService>();
     final motion = story == null
         ? 'The $english ${_motionPrompt(_effect)}.'
         : '$story. Show each step clearly and in this order.';
+    final prompt =
+        '$motion Static camera, the object stays centered and fully in frame. '
+        'Keep the solid pure green background (#00FF00) completely flat and unchanged, no shadows on it, no other objects.';
+    final green = GiftMaker.onGreen(_art!);
     setState(() => _status = 'أحرّك الهدية بـ ${tool.label}… قد يأخذ دقيقة أو أكثر 🎬');
-    final out = await video.generate(
-      '$motion Static camera, the object stays centered and fully in frame. '
-      'Keep the solid pure green background (#00FF00) completely flat and unchanged, no shadows on it, no other objects.',
-      seconds: _seconds,
-      image: GiftMaker.onGreen(_art!),
-      backend: tool.backend,
-    );
+    GeneratedVideo out;
+    try {
+      out = await video.generate(prompt, seconds: _seconds, image: green, backend: tool.backend);
+    } on AiException catch (e) {
+      // A paid provider that is out of credit falls back to Hugging Face when it is set up.
+      final hf = VideoTool.byId('hf');
+      if (tool.backend == VideoBackend.huggingface || !hf.available(settings)) rethrow;
+      if (mounted) showError(context, '${e.message}\nأجرّب Hugging Face بدلاً منه…');
+      setState(() => _status = 'أحرّك الهدية بـ Hugging Face… 🎬');
+      out = await video.generate(prompt, seconds: _seconds, image: green, backend: VideoBackend.huggingface);
+    }
     final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
     final mp4 = await library.save(Uint8List.fromList(bytes), CreationKind.video, 'هدية (شاشة خضراء): ${_prompt.text}');
     setState(() => _status = 'أشيل الخلفية من كل لقطة… ✂️');

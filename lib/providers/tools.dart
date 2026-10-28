@@ -46,6 +46,16 @@ class ImageTool {
   ];
 
   static ImageTool byId(String id) => all.firstWhere((t) => t.id == id, orElse: () => all.first);
+
+  /// The cheapest available image tool that adds no watermark. Falls back to the
+  /// free FLUX (which has a small watermark without a Pollinations token).
+  static ImageTool bestClean(SettingsService s) {
+    for (final id in const ['cf', 'gemini', 'hf', 'rseedream', 'seedream']) {
+      final t = byId(id);
+      if (t.available(s)) return t;
+    }
+    return byId('flux');
+  }
 }
 
 /// A video model the user can pick, with its price in points. [backend] is null
