@@ -272,7 +272,7 @@ Uint8List _animate(_AnimJob job) {
     );
     rendered.add(canvas);
   }
-  return _transparentGif(rendered, delayCs: 6);
+  return encodeTransparentGif(rendered, delayCs: 6);
 }
 
 Uint8List _animatePoses(List<Uint8List> poses) {
@@ -295,13 +295,13 @@ Uint8List _animatePoses(List<Uint8List> poses) {
       rendered.add(canvas);
     }
   }
-  return _transparentGif(rendered, delayCs: 12, sample: stickers);
+  return encodeTransparentGif(rendered, delayCs: 12, sample: stickers);
 }
 
 /// GIF encoders drop alpha when they quantize, which is why stickers came out on
 /// black. Here one palette is built from the sticker's colors, and index 255 is
 /// reserved as the transparent color for every frame.
-Uint8List _transparentGif(List<img.Image> frames, {required int delayCs, List<img.Image>? sample}) {
+Uint8List encodeTransparentGif(List<img.Image> frames, {required int delayCs, List<img.Image>? sample}) {
   // The palette is learned from every distinct picture, side by side.
   final pics = sample ?? [frames.first];
   final opaque = img.Image(width: pics.first.width * pics.length, height: pics.first.height);

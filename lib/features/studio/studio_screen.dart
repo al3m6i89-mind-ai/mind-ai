@@ -3,11 +3,25 @@ import 'package:flutter/material.dart';
 import '../../app/theme.dart';
 import '../../widgets/common.dart';
 import '../code/projects_screen.dart';
+import '../gift/gift_page.dart';
 import '../voice/voice_page.dart';
 import 'generator_page.dart';
 import 'video_page.dart';
 
-enum StudioTool { image, sticker, animatedSticker, removeBg, face, photoEdit, video, voice, slides, website, game }
+enum StudioTool {
+  image,
+  sticker,
+  animatedSticker,
+  removeBg,
+  face,
+  photoEdit,
+  video,
+  voice,
+  gift,
+  slides,
+  website,
+  game,
+}
 
 extension StudioToolInfo on StudioTool {
   String get title => switch (this) {
@@ -19,6 +33,7 @@ extension StudioToolInfo on StudioTool {
     StudioTool.photoEdit => 'تعديل صورتك',
     StudioTool.video => 'فيديو',
     StudioTool.voice => 'إنشاء صوت',
+    StudioTool.gift => 'هدايا متحركة',
     StudioTool.slides => 'عرض شرائح',
     StudioTool.website => 'موقع إلكتروني',
     StudioTool.game => 'تصميم لعبة',
@@ -33,6 +48,7 @@ extension StudioToolInfo on StudioTool {
     StudioTool.photoEdit => 'غيّر خلفيتك أو أسلوب صورتك',
     StudioTool.video => 'فيديو من وصف، أو حرّك صورة مجاناً',
     StudioTool.voice => 'حوّل النص لصوت طبيعي بأساليب متعددة',
+    StudioTool.gift => 'هدايا مثل تطبيقات الدردشة الصوتية',
     StudioTool.slides => 'عرض تقديمي جاهز من فكرة واحدة',
     StudioTool.website => 'موقع كامل بتصميم احترافي',
     StudioTool.game => 'لعبة تلعبها على جوالك فوراً',
@@ -47,6 +63,7 @@ extension StudioToolInfo on StudioTool {
     StudioTool.photoEdit => '🪄',
     StudioTool.video => '🎬',
     StudioTool.voice => '🎙️',
+    StudioTool.gift => '🎁',
     StudioTool.slides => '📊',
     StudioTool.website => '🌐',
     StudioTool.game => '🎮',
@@ -61,6 +78,7 @@ extension StudioToolInfo on StudioTool {
     StudioTool.photoEdit => const LinearGradient(colors: [MindColors.orange, Color(0xFFFFD166)]),
     StudioTool.video => MindColors.fresh,
     StudioTool.voice => const LinearGradient(colors: [MindColors.orange, MindColors.pink]),
+    StudioTool.gift => const LinearGradient(colors: [Color(0xFFFFC94D), MindColors.pink]),
     StudioTool.slides => const LinearGradient(colors: [MindColors.violet, MindColors.cyan]),
     StudioTool.website => MindColors.cool,
     StudioTool.game => const LinearGradient(colors: [MindColors.mint, MindColors.violet]),
@@ -89,6 +107,7 @@ class StudioScreen extends StatelessWidget {
         builder: (_) => switch (tool) {
           StudioTool.video => const VideoPage(),
           StudioTool.voice => const VoicePage(),
+          StudioTool.gift => const GiftPage(),
           _ => GeneratorPage(tool: tool),
         },
       ),
@@ -114,7 +133,7 @@ class StudioScreen extends StatelessWidget {
               subtitle: t.subtitle,
               emoji: t.emoji,
               gradient: t.gradient,
-              badge: t.buildKind != null || t == StudioTool.voice
+              badge: t.buildKind != null || t == StudioTool.voice || t == StudioTool.gift
                   ? 'جديد'
                   : (t == StudioTool.animatedSticker || t == StudioTool.removeBg ? 'مجاني' : null),
               onTap: () => open(context, t),

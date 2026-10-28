@@ -113,7 +113,13 @@ class HomeScreen extends StatelessWidget {
                       gradient: MindColors.fresh,
                       onTap: () => StudioScreen.open(context, StudioTool.video),
                     ),
-                    for (final t in const [StudioTool.slides, StudioTool.website, StudioTool.game, StudioTool.voice])
+                    for (final t in const [
+                      StudioTool.gift,
+                      StudioTool.slides,
+                      StudioTool.website,
+                      StudioTool.game,
+                      StudioTool.voice,
+                    ])
                       ToolTile(
                         title: t.title,
                         subtitle: t.subtitle,
