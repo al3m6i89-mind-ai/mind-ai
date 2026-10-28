@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -323,9 +325,22 @@ class _Field extends StatefulWidget {
 class _FieldState extends State<_Field> {
   late final _c = TextEditingController(text: widget.value);
   bool _hidden = true;
+  bool _saved = false;
+  Timer? _debounce;
+
+  /// Saves shortly after typing or pasting stops, so no save button is needed.
+  void _changed(String v) {
+    _debounce?.cancel();
+    _debounce = Timer(const Duration(milliseconds: 600), () async {
+      await widget.onSaved(v);
+      if (mounted) setState(() => _saved = true);
+    });
+  }
 
   @override
   void dispose() {
+    _debounce?.cancel();
+    if (_c.text != widget.value) widget.onSaved(_c.text);
     _c.dispose();
     super.dispose();
   }
@@ -347,6 +362,7 @@ class _FieldState extends State<_Field> {
               obscureText: widget.secret && _hidden,
               textDirection: widget.ltr || widget.secret ? TextDirection.ltr : null,
               onSubmitted: widget.onSaved,
+              onChanged: _changed,
               decoration: InputDecoration(
                 labelText: widget.label,
                 suffixIcon: widget.secret
@@ -358,6 +374,14 @@ class _FieldState extends State<_Field> {
               ),
             ),
           ),
+          if (_saved)
+            const Padding(
+              padding: EdgeInsets.fromLTRB(6, 4, 6, 0),
+              child: Text(
+                '✓ تم الحفظ',
+                style: TextStyle(fontSize: 12, color: MindColors.mint, fontWeight: FontWeight.w700),
+              ),
+            ),
           if (link != null)
             InkWell(
               onTap: () => launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication),
