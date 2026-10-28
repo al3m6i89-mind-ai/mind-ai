@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:mind_ai/services/gift_maker.dart';
+import 'package:mind_ai/services/gift_sound.dart';
 
 void main() {
   final art = img.Image(width: 512, height: 512, numChannels: 4);
@@ -47,5 +48,11 @@ void main() {
     expect(anim.frames.first.getPixel(1, 1).a, 0);
     expect(anim.frames.first.getPixel(256, 256).a, 255);
     expect(zip.sublist(0, 2), [0x50, 0x4B]); // "PK"
+  });
+
+  test('gift soundtrack is a WAV of the right length', () async {
+    final wav = await GiftSound.make(GiftEffect.royal, seconds: 3);
+    expect(String.fromCharCodes(wav.sublist(0, 4)), 'RIFF');
+    expect(wav.length, 44 + 3 * GiftSound.rate * 2);
   });
 }
