@@ -219,20 +219,33 @@ class ImageGen {
   Future<Uint8List> _huggingFace(String prompt, int w, int h, int seed) async {
     final token = settings.hfToken;
     if (token.isEmpty) throw AiException('أضف رمز Hugging Face المجاني من الإعدادات.');
-    final scale = min(1.0, 1024 / max(w, h));
+    final model = settings.hfImageModel;
+    final headers = {'Content-Type': 'application/json', 'Authorization': 'Bearer $token'};
+    // A model like "fal-ai/flux/schnell" is served by a partner provider and
+    // returns a JSON image URL; a plain "owner/model" uses hf-inference and
+    // returns raw image bytes (which HF has deprecated for many old models).
+    final partner = model.startsWith('fal-ai/') || model.startsWith('replicate/') || model.startsWith('nebius/');
     for (var attempt = 0; attempt < 3; attempt++) {
       final res = await http
           .post(
-            Uri.parse('https://router.huggingface.co/hf-inference/models/${settings.hfImageModel}'),
-            headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer $token', 'Accept': 'image/png'},
-            body: jsonEncode({
-              'inputs': prompt,
-              'parameters': {
-                'width': (w * scale / 16).round() * 16,
-                'height': (h * scale / 16).round() * 16,
-                'seed': seed % 2147483647,
-              },
-            }),
+            Uri.parse(
+              partner
+                  ? 'https://router.huggingface.co/$model'
+                  : 'https://router.huggingface.co/hf-inference/models/$model',
+            ),
+            headers: partner ? headers : {...headers, 'Accept': 'image/png'},
+            body: jsonEncode(
+              partner
+                  ? {
+                      'prompt': prompt,
+                      'image_size': {'width': (w / 16).round() * 16, 'height': (h / 16).round() * 16},
+                      'seed': seed % 2147483647,
+                    }
+                  : {
+                      'inputs': prompt,
+                      'parameters': {'seed': seed % 2147483647},
+                    },
+            ),
           )
           .timeout(const Duration(seconds: 150));
       // 503 means the model is waking up; it is ready a few seconds later.
@@ -244,10 +257,17 @@ class ImageGen {
         throw AiException('رمز Hugging Face غير صحيح أو بدون صلاحية Inference Providers.');
       }
       if (res.statusCode == 402) throw AiException('انتهى رصيد Hugging Face المجاني لهذا الشهر.');
+      if (res.statusCode == 410) {
+        throw AiException('موديل Hugging Face هذا متوقف. غيّره من الإعدادات إلى fal-ai/flux/schnell.');
+      }
       if (res.statusCode >= 400) {
         throw AiException('Hugging Face (${res.statusCode}): ${res.body.substring(0, min(160, res.body.length))}');
       }
-      return res.bodyBytes;
+      if (!partner) return res.bodyBytes;
+      final j = jsonDecode(res.body) as Map<String, dynamic>;
+      final url = (j['images'] as List?)?.firstOrNull?['url'] ?? j['image']?['url'];
+      if (url is String) return http.readBytes(Uri.parse(url));
+      throw AiException('لم يرجع Hugging Face صورة.');
     }
     throw AiException('موديل Hugging Face مشغول الآن. حاول بعد دقيقة.');
   }

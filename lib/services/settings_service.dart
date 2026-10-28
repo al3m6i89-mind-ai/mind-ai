@@ -170,7 +170,7 @@ class SettingsService extends ChangeNotifier {
   String get hfToken => _s('hfToken');
   Future<void> setHfToken(String v) => _set('hfToken', v.trim());
 
-  String get hfImageModel => _s('hfImageModel', 'black-forest-labs/FLUX.1-schnell');
+  String get hfImageModel => _s('hfImageModel', 'fal-ai/flux/schnell');
   Future<void> setHfImageModel(String v) => _set('hfImageModel', v.trim());
 
   String get hfVideoModel => _s('hfVideoModel', 'fal-ai/ltx-video');
