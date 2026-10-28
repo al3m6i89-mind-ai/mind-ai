@@ -8,6 +8,8 @@ import '../providers/ai_models.dart';
 import '../providers/image_gen.dart';
 import '../providers/text_provider.dart';
 import 'library_service.dart';
+import 'media_tools.dart';
+import 'settings_service.dart';
 import 'subscription_service.dart';
 
 /// Personas, like Dola's bots: each one is just a system prompt and a look.
@@ -66,7 +68,7 @@ class Conversation {
 }
 
 class ChatService extends ChangeNotifier {
-  ChatService(this._prefs, this._text, this._images, this._subs, this._library) {
+  ChatService(this._prefs, this._text, this._images, this._subs, this._library, this._settings) {
     final raw = _prefs.getString('conversations');
     if (raw != null) {
       conversations.addAll(
@@ -80,6 +82,7 @@ class ChatService extends ChangeNotifier {
   final ImageGen _images;
   final SubscriptionService _subs;
   final LibraryService _library;
+  final SettingsService _settings;
 
   final List<Conversation> conversations = [];
   bool busy = false;
@@ -96,6 +99,15 @@ class ChatService extends ChangeNotifier {
     _persist();
     notifyListeners();
   }
+
+  static final _bgIntent = RegExp(
+    r'(احذف|حذف|ازل|أزل|إزالة|ازالة|شيل|امسح|مسح|قص|فرّغ|فرغ).{0,8}(الخلفي|خلفي)|remove.{0,6}(background|bg)|cutout',
+    caseSensitive: false,
+  );
+  static final _editIntent = RegExp(
+    r'^(عدّل|عدل|غيّر|غير|حوّل|حول|اجعل|خل|خلي|أضف|اضف|ضيف|edit|make|change|turn)',
+    caseSensitive: false,
+  );
 
   static final _drawIntent = RegExp(r'^(ارسم|ارسملي|صمم|صمّم|أنشئ صورة|انشئ صورة|سوي صورة|draw|/image)\s*', caseSensitive: false);
 
@@ -115,7 +127,26 @@ class ChatService extends ChangeNotifier {
     c.messages.add(reply);
     try {
       final draw = _drawIntent.firstMatch(trimmed);
-      if (draw != null && image == null) {
+      final hasGemini = _settings.textKey(TextBackend.gemini).isNotEmpty;
+      if (image != null && (_bgIntent.hasMatch(trimmed))) {
+        // Background removal runs on the phone: free, offline and instant.
+        _subs.ensure(Usage.sticker);
+        reply.text = '✂️ أحذف الخلفية…';
+        notifyListeners();
+        final png = await MediaTools.cutout(image);
+        final saved = await _library.save(png, CreationKind.sticker, trimmed, ext: 'png');
+        await _subs.consume(Usage.sticker);
+        _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تم حذف الخلفية ✅ اضغط على الصورة لمشاركتها.', imageUrl: saved.path));
+      } else if (image != null && _editIntent.hasMatch(trimmed) && hasGemini) {
+        _subs.ensure(Usage.image);
+        reply.text = '🪄 أعدّل صورتك…';
+        notifyListeners();
+        final en = await _toEnglishPrompt(trimmed);
+        final out = await _images.generate('Edit this photo: $en', reference: image);
+        final saved = await _library.save(out.bytes, CreationKind.image, trimmed);
+        await _subs.consume(Usage.image);
+        _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تفضل! 🪄', imageUrl: saved.path));
+      } else if (draw != null && image == null) {
         _subs.ensure(Usage.image);
         reply.text = '🎨 جاري الرسم…';
         notifyListeners();
@@ -124,16 +155,35 @@ class ChatService extends ChangeNotifier {
         final out = await _images.generate(enPrompt);
         final saved = await _library.save(out.bytes, CreationKind.image, prompt);
         await _subs.consume(Usage.image);
-        c.messages.removeLast();
-        c.messages.add(ChatMessage(role: Role.assistant, text: 'تفضل! 🎨 «$prompt»', imageUrl: saved.path));
+        _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تفضل! 🎨 «$prompt»', imageUrl: saved.path));
       } else {
         _subs.ensure(Usage.chat);
         final persona = Persona.byId(c.personaId);
         final history = c.messages.where((m) => m != reply).toList();
-        final window = history.length > 20 ? history.sublist(history.length - 20) : history;
-        await for (final token in _text.chat(window, system: persona.system)) {
-          reply.text += token;
-          notifyListeners();
+        var window = history.length > 20 ? history.sublist(history.length - 20) : history;
+        // Only the newest message carries its picture; older ones go as text so a
+        // text-only model doesn't reject the whole conversation.
+        window = [
+          for (final m in window)
+            identical(m, window.last) ? m : ChatMessage(role: m.role, text: m.text.isEmpty ? '[صورة]' : m.text),
+        ];
+        // Pictures need a vision model: Gemini when a key exists.
+        final backend = image != null && hasGemini ? TextBackend.gemini : null;
+        try {
+          await for (final token in _text.chat(window, system: persona.system, backend: backend)) {
+            reply.text += token;
+            notifyListeners();
+          }
+        } on AiException catch (e) {
+          if (image == null || !e.message.contains('image')) rethrow;
+          // The free model can't see pictures: answer from the text and say how to enable vision.
+          reply.text = '';
+          final textOnly = [...window.take(window.length - 1), ChatMessage(role: Role.user, text: trimmed.isEmpty ? 'أرسلت صورة' : trimmed)];
+          await for (final token in _text.chat(textOnly, system: persona.system)) {
+            reply.text += token;
+            notifyListeners();
+          }
+          reply.text += '\n\n> 💡 النموذج المجاني الحالي لا يرى الصور. أضف مفتاح Gemini المجاني من الإعدادات ليفهم صورك ويعدّلها. ولحذف الخلفية اكتب «احذف الخلفية» مع الصورة.';
         }
         await _subs.consume(Usage.chat);
       }
@@ -144,6 +194,11 @@ class ChatService extends ChangeNotifier {
       _persist();
       notifyListeners();
     }
+  }
+
+  void _replace(Conversation c, ChatMessage placeholder, ChatMessage result) {
+    final i = c.messages.indexOf(placeholder);
+    if (i >= 0) c.messages[i] = result;
   }
 
   /// Image models follow English prompts far better, so translate quietly first.

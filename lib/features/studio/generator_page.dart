@@ -61,12 +61,12 @@ class _GeneratorPageState extends State<GeneratorPage> {
   StudioTool get tool => widget.tool;
 
   Usage get _usage => switch (tool) {
-        StudioTool.sticker || StudioTool.animatedSticker => Usage.sticker,
+        StudioTool.sticker || StudioTool.animatedSticker || StudioTool.removeBg => Usage.sticker,
         _ => Usage.image,
       };
 
   CreationKind get _kind => switch (tool) {
-        StudioTool.sticker => CreationKind.sticker,
+        StudioTool.sticker || StudioTool.removeBg => CreationKind.sticker,
         StudioTool.animatedSticker => CreationKind.animatedSticker,
         StudioTool.face => CreationKind.face,
         _ => CreationKind.image,
@@ -91,7 +91,36 @@ class _GeneratorPageState extends State<GeneratorPage> {
     }
   }
 
+  /// Free, on-device background removal: no prompt and no AI call needed.
+  Future<void> _cutout() async {
+    if (_photo == null) {
+      await _pickPhoto();
+      if (_photo == null) return;
+    }
+    final subs = context.read<SubscriptionService>();
+    final library = context.read<LibraryService>();
+    try {
+      subs.ensure(_usage);
+      setState(() {
+        _busy = true;
+        _status = 'أحذف الخلفية… ✂️';
+      });
+      final png = await MediaTools.cutout(_photo!);
+      await library.save(png, CreationKind.sticker, 'حذف الخلفية', ext: 'png');
+      await subs.consume(_usage);
+      setState(() {
+        _result = png;
+        _resultExt = 'png';
+      });
+    } catch (e) {
+      if (mounted) showError(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _generate() async {
+    if (tool == StudioTool.removeBg) return _cutout();
     final text = _prompt.text.trim();
     if (text.isEmpty) return;
     if (tool == StudioTool.photoEdit && _photo == null) {
@@ -180,7 +209,11 @@ class _GeneratorPageState extends State<GeneratorPage> {
         children: [
           Row(children: [Expanded(child: Text(tool.subtitle, style: const TextStyle(color: MindColors.muted))), QuotaPill(_usage)]),
           const SizedBox(height: 12),
-          if (tool == StudioTool.photoEdit || tool == StudioTool.face) _photoPicker(),
+          if (tool == StudioTool.photoEdit || tool == StudioTool.face || tool == StudioTool.removeBg) _photoPicker(),
+          if (tool == StudioTool.removeBg)
+            const Text('يشتغل أفضل مع الصور اللي خلفيتها لون واحد (أبيض، سادة…). مجاني ويعمل بدون إنترنت.',
+                style: TextStyle(color: MindColors.muted, fontSize: 13)),
+          if (tool != StudioTool.removeBg) ...[
           TextField(
             controller: _prompt,
             minLines: 2,
@@ -231,9 +264,10 @@ class _GeneratorPageState extends State<GeneratorPage> {
             const _Label('المقاس'),
             _chips(_ratios.map((r) => r.label).toList(), _ratios.indexOf(_ratio), (i) => setState(() => _ratio = _ratios[i])),
           ],
+          ],
           const SizedBox(height: 18),
           GradientButton(
-            label: _busy ? _status : 'أنشئ الآن',
+            label: _busy ? _status : (tool == StudioTool.removeBg ? 'احذف الخلفية' : 'أنشئ الآن'),
             icon: Icons.auto_awesome,
             loading: _busy,
             gradient: tool.gradient,
@@ -269,7 +303,11 @@ class _GeneratorPageState extends State<GeneratorPage> {
             child: _photo == null
                 ? Center(
                     child: Text(
-                      tool == StudioTool.face ? '📸 أضف صورتك (اختياري) لتحويلها لفيس' : '📸 اختر الصورة التي تريد تعديلها',
+                      tool == StudioTool.face
+                          ? '📸 أضف صورتك (اختياري) لتحويلها لفيس'
+                          : tool == StudioTool.removeBg
+                              ? '📸 اختر الصورة اللي تبي تحذف خلفيتها'
+                              : '📸 اختر الصورة التي تريد تعديلها',
                       style: const TextStyle(fontWeight: FontWeight.w700, color: MindColors.violet),
                     ),
                   )

@@ -33,7 +33,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: subs),
         ChangeNotifierProvider.value(value: library),
         ChangeNotifierProvider.value(value: code),
-        ChangeNotifierProvider(create: (_) => ChatService(settings.prefs, text, images, subs, library)),
+        ChangeNotifierProvider(create: (_) => ChatService(settings.prefs, text, images, subs, library, settings)),
         ChangeNotifierProvider(create: (_) => BuildService(settings)),
         Provider.value(value: text),
         Provider.value(value: images),

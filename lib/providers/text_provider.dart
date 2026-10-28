@@ -14,8 +14,8 @@ class TextProvider {
 
   /// Streams the assistant reply token by token. Falls back to a single
   /// non-streamed response when the backend does not stream.
-  Stream<String> chat(List<ChatMessage> history, {String? system}) async* {
-    final backend = settings.textBackend;
+  Stream<String> chat(List<ChatMessage> history, {String? system, TextBackend? backend}) async* {
+    backend ??= settings.textBackend;
     final url = settings.textBaseUrl(backend);
     final key = settings.textKey(backend);
     if (url.isEmpty) throw AiException('لم يتم ضبط رابط المزوّد في الإعدادات.');
@@ -84,9 +84,9 @@ class TextProvider {
   }
 
   /// Convenience: whole reply as one string.
-  Future<String> complete(List<ChatMessage> history, {String? system}) async {
+  Future<String> complete(List<ChatMessage> history, {String? system, TextBackend? backend}) async {
     final sb = StringBuffer();
-    await for (final t in chat(history, system: system)) {
+    await for (final t in chat(history, system: system, backend: backend)) {
       sb.write(t);
     }
     return sb.toString();

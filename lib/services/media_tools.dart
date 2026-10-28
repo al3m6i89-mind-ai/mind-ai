@@ -38,6 +38,9 @@ class MediaTools {
   static Future<Uint8List> makeSticker(Uint8List source, {bool outline = true}) =>
       compute(_makeSticker, _StickerJob(source, outline));
 
+  /// Cuts the subject out of a photo with a plain background (transparent PNG).
+  static Future<Uint8List> cutout(Uint8List source) => compute(_cutout, source);
+
   /// Renders an animated GIF sticker from a still sticker.
   static Future<Uint8List> animateSticker(Uint8List sticker, StickerMotion motion) =>
       compute(_animate, _AnimJob(sticker, motion));
@@ -86,6 +89,17 @@ Uint8List _makeSticker(_StickerJob job) {
   }
   img.compositeImage(canvas, src, dstX: dx, dstY: dy);
   return Uint8List.fromList(img.encodePng(canvas));
+}
+
+Uint8List _cutout(Uint8List bytes) {
+  final decoded = img.decodeImage(bytes);
+  if (decoded == null) throw Exception('bad image');
+  var im = decoded.convert(numChannels: 4);
+  if (im.width > 1024 || im.height > 1024) {
+    im = im.width >= im.height ? img.copyResize(im, width: 1024) : img.copyResize(im, height: 1024);
+  }
+  _floodRemoveBackground(im);
+  return Uint8List.fromList(img.encodePng(im));
 }
 
 /// Removes the flat background by flood-filling from the borders. Works well

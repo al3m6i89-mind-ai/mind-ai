@@ -5,13 +5,14 @@ import '../../widgets/common.dart';
 import 'generator_page.dart';
 import 'video_page.dart';
 
-enum StudioTool { image, sticker, animatedSticker, face, photoEdit, video }
+enum StudioTool { image, sticker, animatedSticker, removeBg, face, photoEdit, video }
 
 extension StudioToolInfo on StudioTool {
   String get title => switch (this) {
         StudioTool.image => 'إنشاء صور',
         StudioTool.sticker => 'ملصقات',
         StudioTool.animatedSticker => 'ملصقات متحركة',
+        StudioTool.removeBg => 'حذف الخلفية',
         StudioTool.face => 'فيسات وأفاتار',
         StudioTool.photoEdit => 'تعديل صورتك',
         StudioTool.video => 'فيديو',
@@ -21,6 +22,7 @@ extension StudioToolInfo on StudioTool {
         StudioTool.image => 'أي فكرة تتحول لصورة بأساليب متعددة',
         StudioTool.sticker => 'ملصقات بخلفية شفافة للواتساب وتيليجرام',
         StudioTool.animatedSticker => 'ملصق GIF يتحرك بحركات ممتعة',
+        StudioTool.removeBg => 'قص العنصر من صورتك بخلفية شفافة',
         StudioTool.face => 'وجوه، إيموجي، شخصيات وأفاتار',
         StudioTool.photoEdit => 'غيّر خلفيتك أو أسلوب صورتك',
         StudioTool.video => 'فيديو من وصف، أو حرّك صورة مجاناً',
@@ -30,6 +32,7 @@ extension StudioToolInfo on StudioTool {
         StudioTool.image => '🎨',
         StudioTool.sticker => '🦄',
         StudioTool.animatedSticker => '💃',
+        StudioTool.removeBg => '✂️',
         StudioTool.face => '😎',
         StudioTool.photoEdit => '🪄',
         StudioTool.video => '🎬',
@@ -39,6 +42,7 @@ extension StudioToolInfo on StudioTool {
         StudioTool.image => MindColors.brand,
         StudioTool.sticker => MindColors.sunset,
         StudioTool.animatedSticker => const LinearGradient(colors: [MindColors.pink, MindColors.violet]),
+        StudioTool.removeBg => const LinearGradient(colors: [MindColors.cyan, MindColors.mint]),
         StudioTool.face => MindColors.cool,
         StudioTool.photoEdit => const LinearGradient(colors: [MindColors.orange, Color(0xFFFFD166)]),
         StudioTool.video => MindColors.fresh,
@@ -73,7 +77,7 @@ class StudioScreen extends StatelessWidget {
               subtitle: t.subtitle,
               emoji: t.emoji,
               gradient: t.gradient,
-              badge: t == StudioTool.animatedSticker ? 'مجاني' : null,
+              badge: t == StudioTool.animatedSticker || t == StudioTool.removeBg ? 'مجاني' : null,
               onTap: () => open(context, t),
             ),
         ],

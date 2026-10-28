@@ -48,7 +48,6 @@ dependencies:
   gal: ^2.3.3
   re_editor: ^0.10.0
   re_highlight: ^0.0.3
-  google_fonts: ^6.3.0
   uuid: ^4.6.0
   url_launcher: ^6.3.3
   open_filex: ^5.0.0

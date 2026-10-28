@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
 
 /// Bright, Dola-style palette: violet → pink → orange gradients on a clean white canvas.
 class MindColors {
@@ -51,9 +50,6 @@ ThemeData buildTheme(Brightness brightness) {
   return ThemeData(
     useMaterial3: true,
     colorScheme: scheme,
-    textTheme: GoogleFonts.cairoTextTheme(
-      ThemeData(brightness: brightness).textTheme,
-    ),
     scaffoldBackgroundColor: scheme.surface,
     appBarTheme: AppBarTheme(
       backgroundColor: Colors.transparent,
@@ -61,7 +57,7 @@ ThemeData buildTheme(Brightness brightness) {
       scrolledUnderElevation: 0,
       centerTitle: true,
       foregroundColor: dark ? Colors.white : MindColors.ink,
-      titleTextStyle: GoogleFonts.cairo(
+      titleTextStyle: TextStyle(
         fontSize: 18,
         fontWeight: FontWeight.w800,
         color: dark ? Colors.white : MindColors.ink,
@@ -85,14 +81,14 @@ ThemeData buildTheme(Brightness brightness) {
       style: FilledButton.styleFrom(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 14),
-        textStyle: GoogleFonts.cairo(fontWeight: FontWeight.w700),
+        textStyle: TextStyle(fontWeight: FontWeight.w700),
       ),
     ),
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: dark ? const Color(0xFF1E1A2E) : Colors.white,
       indicatorColor: MindColors.violet.withValues(alpha: 0.14),
       labelTextStyle: WidgetStateProperty.all(
-        GoogleFonts.cairo(fontSize: 12, fontWeight: FontWeight.w700),
+        TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
       ),
     ),
   );

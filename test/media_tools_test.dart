@@ -23,6 +23,16 @@ void main() {
     expect(img.decodeGif(kb)!.numFrames, 30);
   });
 
+  test('cutout keeps size and clears a flat background', () async {
+    final src = img.Image(width: 400, height: 300);
+    img.fill(src, color: img.ColorRgb8(250, 250, 250));
+    img.fillRect(src, x1: 120, y1: 80, x2: 280, y2: 220, color: img.ColorRgb8(220, 30, 30));
+    final out = img.decodePng(await MediaTools.cutout(img.encodePng(src)))!;
+    expect(out.width, 400);
+    expect(out.getPixel(5, 5).a, 0);
+    expect(out.getPixel(200, 150).a, 255);
+  });
+
   test('web project is wrapped in a Flutter shell for APK builds', () {
     final p = CodeProject(id: 'abcdef123', name: 'Todo App', type: ProjectType.web, files: {'index.html': '<h1>hi</h1>'});
     final tree = BuildService.buildTree(p);
