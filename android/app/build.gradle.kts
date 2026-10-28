@@ -29,11 +29,23 @@ android {
         versionName = flutter.versionName
     }
 
+    // CI keeps one key in its private cache (see build-apk.yml) so every new APK
+    // installs as an update. Replace with your own upload key before Google Play.
+    val ciKey = file("ci-signing.jks")
+    signingConfigs {
+        if (ciKey.exists()) {
+            create("ci") {
+                storeFile = ciKey
+                storePassword = System.getenv("MINDAI_KEY_PASS") ?: "mindai-ci"
+                keyAlias = "mindai"
+                keyPassword = System.getenv("MINDAI_KEY_PASS") ?: "mindai-ci"
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            signingConfig = if (ciKey.exists()) signingConfigs.getByName("ci") else signingConfigs.getByName("debug")
         }
     }
 }

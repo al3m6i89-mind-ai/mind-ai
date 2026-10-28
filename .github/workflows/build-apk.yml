@@ -22,7 +22,20 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze --no-fatal-infos
       - run: flutter test
-      - run: flutter build apk --release
+      # One signing key, created on the first build and kept in the repo's private
+      # Actions cache, so each new APK installs over the previous one.
+      - name: Restore signing key
+        id: key
+        uses: actions/cache@v4
+        with:
+          path: android/app/ci-signing.jks
+          key: mindai-signing-key-v1
+      - name: Create signing key (first build only)
+        if: steps.key.outputs.cache-hit != 'true'
+        run: |
+          keytool -genkeypair -keystore android/app/ci-signing.jks -storepass mindai-ci -keypass mindai-ci \
+            -alias mindai -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Mind Ai, O=Mind Ai"
+      - run: flutter build apk --release --build-number=${{ github.run_number }}
       - uses: actions/upload-artifact@v4
         with:
           name: mind-ai-apk
