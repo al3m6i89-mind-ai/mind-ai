@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, nuvola-cloudphone]
   pull_request:
 
 jobs:
