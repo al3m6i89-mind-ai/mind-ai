@@ -26,6 +26,13 @@ android {
             versionNameSuffix = "-dev"
             buildConfigField("String", "API_BASE_URL", "\"http://10.0.2.2:8080/api/v1/\"")
         }
+        // Public demo server on Render (simulated phones, no payments).
+        create("demo") {
+            dimension = "env"
+            applicationIdSuffix = ".demo"
+            versionNameSuffix = "-demo"
+            buildConfigField("String", "API_BASE_URL", "\"https://nuvola-api-zuhair.onrender.com/api/v1/\"")
+        }
         create("staging") {
             dimension = "env"
             applicationIdSuffix = ".staging"

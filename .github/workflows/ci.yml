@@ -47,11 +47,15 @@ jobs:
           distribution: temurin
           java-version: "17"
       - uses: gradle/actions/setup-gradle@v4
-      - run: ./gradlew assembleDevDebug --no-daemon
+      - run: ./gradlew assembleDevDebug assembleDemoDebug --no-daemon
       - uses: actions/upload-artifact@v4
         with:
           name: nuvola-dev-debug-apk
           path: android/app/build/outputs/apk/dev/debug/*.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nuvola-demo-apk
+          path: android/app/build/outputs/apk/demo/debug/*.apk
 
   android-smoke:
     # Launches the app on an emulator so start-up crashes are caught before anyone installs it.
@@ -71,7 +75,7 @@ jobs:
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
-      - run: ./gradlew assembleDevDebug --no-daemon
+      - run: ./gradlew assembleDevDebug assembleDemoDebug --no-daemon
       - uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 34

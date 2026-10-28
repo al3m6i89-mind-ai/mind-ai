@@ -82,12 +82,20 @@ class SplashVm(app: Application) : BaseVm(app) {
 
     init { check() }
 
-    /** Health check, config, then session. Bounded by a timeout so the splash never spins forever. */
+    /**
+     * Config, then session. A free-tier server can take up to a minute to wake up, so unreachable
+     * errors are retried for a bounded time; the splash never spins forever.
+     */
     fun check() {
         state.value = SplashState.Checking
         viewModelScope.launch {
-            val result = withTimeoutOrNull(12_000) {
-                when (val cfg = call { api.appConfig() }) {
+            val result = withTimeoutOrNull(90_000) {
+                var cfg = call { api.appConfig() }
+                while (cfg is ApiResult.Failed && cfg.error == AppError.ServerUnreachable) {
+                    kotlinx.coroutines.delay(3_000)
+                    cfg = call { api.appConfig() }
+                }
+                when (cfg) {
                     is ApiResult.Failed -> SplashState.Failed(cfg.error)
                     is ApiResult.Ok -> {
                         nuvola.config = cfg.value

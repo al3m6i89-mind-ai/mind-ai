@@ -31,7 +31,9 @@ class ApiClient(private val tokens: TokenStore) {
     /** Emits when the refresh token is no longer accepted and the user must sign in again. */
     val sessionExpired: SharedFlow<Unit> = _sessionExpired
 
-    private val clientLabel = "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}"
+    // HTTP header values must be printable ASCII, and device names can contain anything.
+    private val clientLabel = "${Build.MANUFACTURER} ${Build.MODEL} - Android ${Build.VERSION.RELEASE}"
+        .map { if (it in ' '..'~') it else '?' }.joinToString("").take(120)
 
     private fun baseClient() = OkHttpClient.Builder()
         .connectTimeout(10, TimeUnit.SECONDS)
