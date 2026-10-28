@@ -111,7 +111,7 @@ class SubscriptionService extends ChangeNotifier {
   SubscriptionService(this._prefs);
 
   final SharedPreferences _prefs;
-  final _iap = InAppPurchase.instance;
+  InAppPurchase get _iap => InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _sub;
   Map<String, ProductDetails> products = {};
   bool storeAvailable = false;

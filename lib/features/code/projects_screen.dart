@@ -26,14 +26,17 @@ class ProjectsScreen extends StatelessWidget {
             children: [
               const Text('مشروع جديد', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
               const SizedBox(height: 12),
-              TextField(controller: name, decoration: const InputDecoration(hintText: 'اسم التطبيق (بالإنجليزي أفضل) مثلاً: TodoApp')),
-              const SizedBox(height: 10),
               TextField(
                 controller: idea,
-                minLines: 3,
-                maxLines: 6,
-                decoration: const InputDecoration(hintText: 'صف فكرة التطبيق… مثلاً: تطبيق مهام بألوان زاهية مع تذكيرات وتصنيفات'),
+                autofocus: true,
+                minLines: 4,
+                maxLines: 8,
+                decoration: const InputDecoration(
+                  hintText: 'اكتب فكرتك وبس ✨\nمثلاً: تطبيق يدمج ملفات PDF ويصغّر حجمها، بتصميم بنفسجي أنيق',
+                ),
               ),
+              const SizedBox(height: 10),
+              TextField(controller: name, decoration: const InputDecoration(hintText: 'اسم التطبيق (اختياري)')),
               const SizedBox(height: 12),
               for (final t in ProjectType.values)
                 RadioListTile<ProjectType>(
@@ -42,11 +45,11 @@ class ProjectsScreen extends StatelessWidget {
                   onChanged: (v) => set(() => type = v!),
                   title: Text(t.label, style: const TextStyle(fontWeight: FontWeight.w700)),
                   subtitle: Text(t == ProjectType.web
-                      ? 'الأسرع: تشوفه فوراً داخل التطبيق ويتحول لـ APK'
-                      : 'تطبيق أندرويد أصلي بأداء عالي، يُبنى في السحابة'),
+                      ? 'ننصح فيه: يجهز بسرعة، تجربه فوراً، ويتحول لـ APK'
+                      : 'تطبيق أندرويد أصلي، يحتاج بناء سحابي لتجربته'),
                 ),
               const SizedBox(height: 8),
-              GradientButton(label: 'ابدأ البناء 🚀', onPressed: () => Navigator.pop(ctx, true)),
+              GradientButton(label: 'ابنِ تطبيقي 🚀', onPressed: () => Navigator.pop(ctx, true)),
             ],
           ),
         ),

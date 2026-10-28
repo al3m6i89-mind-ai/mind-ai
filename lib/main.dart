@@ -22,7 +22,7 @@ Future<void> main() async {
   await library.init();
   final text = TextProvider(settings);
   final images = ImageGen(settings);
-  final code = CodeService(text, subs);
+  final code = CodeService(text, subs, settings);
   await code.init();
   subs.init();
 
