@@ -19,6 +19,7 @@ class ImageTool {
     ImageBackend.cloudflare => s.cfToken.isNotEmpty && s.cfAccountId.isNotEmpty,
     ImageBackend.seedream => s.arkKey.isNotEmpty,
     ImageBackend.gemini => s.textKey(TextBackend.gemini).isNotEmpty,
+    ImageBackend.replicate => s.replicateKey.isNotEmpty,
     ImageBackend.custom => s.customImageUrl.isNotEmpty,
   };
 
@@ -29,6 +30,7 @@ class ImageTool {
     ImageBackend.cloudflare => 'رمز Cloudflare',
     ImageBackend.seedream => 'مفتاح BytePlus',
     ImageBackend.gemini => 'مفتاح Gemini',
+    ImageBackend.replicate => 'مفتاح Replicate',
     ImageBackend.custom => 'رابط مخصص',
   };
 
@@ -39,6 +41,7 @@ class ImageTool {
     ImageTool('hf', 'Hugging Face FLUX', '🤗', 2, ImageBackend.huggingface, note: 'دقيق ومجاني برمز'),
     ImageTool('gemini', 'Gemini Nano Banana', '🍌', 3, ImageBackend.gemini, note: 'ممتاز للتعديل والنصوص'),
     ImageTool('seedream', 'Seedream', '🌟', 6, ImageBackend.seedream, note: 'الأقوى والأدق'),
+    ImageTool('rseedream', 'Seedream (Replicate)', '🌟', 6, ImageBackend.replicate, note: 'Seedream من أي دولة'),
     ImageTool('custom', 'مخصص', '🔧', 2, ImageBackend.custom),
   ];
 
@@ -78,7 +81,7 @@ class VideoTool {
     VideoTool('free', 'مشهد متحرك', '🎞️', 5, null, note: 'مجاني: صورة ذكية + حركة كاميرا'),
     VideoTool('pollinations', 'Pollinations Video', '🌸', 12, VideoBackend.pollinations),
     VideoTool('hf', 'Hugging Face LTX', '🤗', 20, VideoBackend.huggingface, note: 'فيديو حقيقي'),
-    VideoTool('replicate', 'Replicate', '🔁', 30, VideoBackend.replicate),
+    VideoTool('replicate', 'Seedance (Replicate)', '🎬', 40, VideoBackend.replicate, note: 'Seedance من أي دولة'),
     VideoTool('seedance', 'Seedance Pro', '🎬', 40, VideoBackend.seedance, note: 'الأقوى: حركة سينمائية'),
     VideoTool('custom', 'مخصص', '🔧', 20, VideoBackend.custom),
   ];

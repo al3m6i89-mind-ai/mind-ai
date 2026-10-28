@@ -5,7 +5,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 enum TextBackend { pollinations, anthropic, openai, gemini, groq, openrouter, custom }
 
 /// Image providers. Pollinations needs no key; Gemini uses its free image model.
-enum ImageBackend { pollinations, huggingface, cloudflare, seedream, gemini, custom }
+enum ImageBackend { pollinations, huggingface, cloudflare, seedream, replicate, gemini, custom }
 
 /// Video providers. Video has no truly unlimited free API, so this stays pluggable.
 enum VideoBackend { pollinations, huggingface, seedance, replicate, custom }
@@ -62,6 +62,7 @@ extension ImageBackendInfo on ImageBackend {
     ImageBackend.cloudflare => 'Cloudflare Workers AI (مجاني)',
     ImageBackend.seedream => 'Seedream من BytePlus (مفتاح)',
     ImageBackend.gemini => 'Google Gemini Image (مفتاح مجاني)',
+    ImageBackend.replicate => 'Replicate (مفتاح)',
     ImageBackend.custom => 'رابط مخصص',
   };
 }
@@ -202,8 +203,11 @@ class SettingsService extends ChangeNotifier {
   String get replicateKey => _s('replicateKey');
   Future<void> setReplicateKey(String v) => _set('replicateKey', v.trim());
 
-  String get replicateVideoModel => _s('replicateVideoModel', 'minimax/video-01');
+  String get replicateVideoModel => _s('replicateVideoModel', 'bytedance/seedance-1-pro');
   Future<void> setReplicateVideoModel(String v) => _set('replicateVideoModel', v.trim());
+
+  String get replicateImageModel => _s('replicateImageModel', 'bytedance/seedream-4');
+  Future<void> setReplicateImageModel(String v) => _set('replicateImageModel', v.trim());
 
   String get customVideoUrl => _s('customVideoUrl');
   Future<void> setCustomVideoUrl(String v) => _set('customVideoUrl', v.trim());

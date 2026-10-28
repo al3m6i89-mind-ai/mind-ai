@@ -125,7 +125,9 @@ class _VideoPageState extends State<VideoPage> {
   }
 
   static bool _animatesPhotos(VideoTool t) =>
-      t.backend == VideoBackend.seedance || t.backend == VideoBackend.huggingface;
+      t.backend == VideoBackend.seedance ||
+      t.backend == VideoBackend.huggingface ||
+      t.backend == VideoBackend.replicate;
 
   Widget _picker(BuildContext context) {
     final settings = context.read<SettingsService>();

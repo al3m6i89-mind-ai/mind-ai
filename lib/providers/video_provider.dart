@@ -34,7 +34,7 @@ class VideoProvider {
         VideoBackend.huggingface => await _huggingFace(prompt, image),
         VideoBackend.pollinations => await _pollinations(prompt, seconds),
         VideoBackend.seedance => await _seedance(prompt, seconds, image),
-        VideoBackend.replicate => await _replicate(prompt),
+        VideoBackend.replicate => await _replicate(prompt, seconds, image),
         VideoBackend.custom => await _custom(prompt, seconds),
       };
     } on TimeoutException {
@@ -133,7 +133,8 @@ class VideoProvider {
     }
   }
 
-  Future<GeneratedVideo> _replicate(String prompt) async {
+  /// Replicate, by default ByteDance Seedance (works where BytePlus is not offered).
+  Future<GeneratedVideo> _replicate(String prompt, int seconds, Uint8List? image) async {
     final key = settings.replicateKey;
     if (key.isEmpty) throw AiException('أضف مفتاح Replicate من الإعدادات.');
     final headers = {'Authorization': 'Bearer $key', 'Content-Type': 'application/json', 'Prefer': 'wait=60'};
@@ -143,13 +144,19 @@ class VideoProvider {
           Uri.parse('https://api.replicate.com/v1/models/$model/predictions'),
           headers: headers,
           body: jsonEncode({
-            'input': {'prompt': prompt},
+            'input': {
+              'prompt': prompt,
+              if (model.contains('seedance')) 'duration': seconds <= 5 ? 5 : 10,
+              if (image != null) 'image': 'data:image/jpeg;base64,${base64Encode(image)}',
+            },
           }),
         )
         .timeout(const Duration(seconds: 90));
-    if (res.statusCode >= 400) throw AiException('Replicate: ${res.statusCode} ${res.body}');
+    if (res.statusCode == 401) throw AiException('مفتاح Replicate غير صحيح.');
+    if (res.statusCode == 402) throw AiException('رصيد Replicate خلص. اشحن حسابك من replicate.com/account/billing.');
+    if (res.statusCode >= 400) throw AiException('Replicate (${res.statusCode}): ${_short(res.body)}');
     var j = jsonDecode(res.body) as Map<String, dynamic>;
-    final deadline = DateTime.now().add(const Duration(minutes: 8));
+    final deadline = DateTime.now().add(const Duration(minutes: 10));
     while (j['status'] != 'succeeded') {
       if (j['status'] == 'failed' || j['status'] == 'canceled') {
         throw AiException('فشل توليد الفيديو: ${j['error'] ?? ''}');

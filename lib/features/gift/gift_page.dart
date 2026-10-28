@@ -47,7 +47,7 @@ class _GiftPageState extends State<GiftPage> {
   String? _soundPath;
 
   static const _ideas = ['صندوق هدية أحمر', 'تاج ذهبي', 'وردة حمراء', 'سيارة رياضية', 'قلب كريستال', 'أسد ذهبي'];
-  static const _proTools = ['seedance', 'hf'];
+  static const _proTools = ['seedance', 'replicate', 'hf'];
 
   VideoTool? _proTool(SettingsService s) {
     for (final id in _proTools) {
@@ -244,7 +244,10 @@ class _GiftPageState extends State<GiftPage> {
             selected: {_pro},
             onSelectionChanged: (v) {
               if (v.first && proTool == null) {
-                showError(context, 'الوضع الاحترافي يحتاج مفتاح BytePlus (Seedance) أو رمز Hugging Face من الإعدادات.');
+                showError(
+                  context,
+                  'الوضع الاحترافي يحتاج مفتاح Replicate (Seedance) أو رمز Hugging Face من الإعدادات.',
+                );
                 return;
               }
               setState(() => _pro = v.first);

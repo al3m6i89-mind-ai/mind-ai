@@ -34,7 +34,8 @@ class ImageGen {
   final SettingsService settings;
 
   /// True when a model that can redraw a given picture is configured.
-  bool get canEdit => settings.arkKey.isNotEmpty || settings.textKey(TextBackend.gemini).isNotEmpty;
+  bool get canEdit =>
+      settings.arkKey.isNotEmpty || settings.replicateKey.isNotEmpty || settings.textKey(TextBackend.gemini).isNotEmpty;
 
   Future<GeneratedImage> generate(
     String prompt, {
@@ -59,6 +60,7 @@ class ImageGen {
               ? await _pollinations(prompt, width, height, seed, model, reference)
               : await _huggingFace(prompt, width, height, seed),
         ImageBackend.gemini => await _gemini(prompt, reference),
+        ImageBackend.replicate => await _replicate(prompt, width, height, reference),
         ImageBackend.custom => await _custom(prompt, width, height, seed),
       };
       return GeneratedImage(bytes, prompt: prompt);
@@ -72,6 +74,9 @@ class ImageGen {
     // goes to Seedream or Gemini when a key exists.
     if (reference != null && settings.arkKey.isNotEmpty) {
       return _seedream(prompt, w, h, seed, reference);
+    }
+    if (reference != null && settings.replicateKey.isNotEmpty) {
+      return _replicate(prompt, w, h, reference);
     }
     if (reference != null && settings.textKey(TextBackend.gemini).isNotEmpty) {
       return _gemini(prompt, reference);
@@ -147,6 +152,46 @@ class ImageGen {
     final url = item?['url'];
     if (url is String) return http.readBytes(Uri.parse(url));
     throw AiException('لم يرجع Seedream صورة. جرّب وصفاً مختلفاً.');
+  }
+
+  /// Replicate, by default ByteDance Seedream 4. Takes a reference photo for edits.
+  Future<Uint8List> _replicate(String prompt, int w, int h, Uint8List? reference) async {
+    final key = settings.replicateKey;
+    if (key.isEmpty) throw AiException('أضف مفتاح Replicate من الإعدادات.');
+    final headers = {'Authorization': 'Bearer $key', 'Content-Type': 'application/json', 'Prefer': 'wait=60'};
+    final ratio = w == h ? '1:1' : (w > h ? '16:9' : '9:16');
+    var res = await http
+        .post(
+          Uri.parse('https://api.replicate.com/v1/models/${settings.replicateImageModel}/predictions'),
+          headers: headers,
+          body: jsonEncode({
+            'input': {
+              'prompt': prompt,
+              'aspect_ratio': ratio,
+              if (reference != null) 'image_input': ['data:image/jpeg;base64,${base64Encode(reference)}'],
+            },
+          }),
+        )
+        .timeout(const Duration(seconds: 120));
+    if (res.statusCode == 401) throw AiException('مفتاح Replicate غير صحيح.');
+    if (res.statusCode == 402) throw AiException('رصيد Replicate خلص. اشحن حسابك من replicate.com/account/billing.');
+    if (res.statusCode >= 400) {
+      throw AiException('Replicate (${res.statusCode}): ${res.body.substring(0, min(160, res.body.length))}');
+    }
+    var j = jsonDecode(res.body) as Map<String, dynamic>;
+    final deadline = DateTime.now().add(const Duration(minutes: 4));
+    while (j['status'] != 'succeeded') {
+      if (j['status'] == 'failed' || j['status'] == 'canceled') {
+        throw AiException('فشل إنشاء الصورة: ${j['error'] ?? ''}');
+      }
+      if (DateTime.now().isAfter(deadline)) throw TimeoutException('image');
+      await Future<void>.delayed(const Duration(seconds: 2));
+      res = await http.get(Uri.parse(j['urls']['get'] as String), headers: headers);
+      j = jsonDecode(res.body) as Map<String, dynamic>;
+    }
+    final out = j['output'];
+    final url = out is List ? out.first as String : out as String;
+    return http.readBytes(Uri.parse(url));
   }
 
   /// Cloudflare Workers AI, FLUX.1 schnell (free daily allowance).
