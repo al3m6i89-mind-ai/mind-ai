@@ -38,7 +38,11 @@ class FilesTab extends StatelessWidget {
     if (path == null || path.isEmpty || !context.mounted) return;
     project.files[path] = '';
     context.read<CodeService>().save(project);
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorScreen(project: project, path: path)));
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => EditorScreen(project: project, path: path),
+      ),
+    );
   }
 
   @override
@@ -61,7 +65,11 @@ class FilesTab extends StatelessWidget {
             tileColor: Theme.of(context).cardTheme.color,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             leading: Text(_icon(path), style: const TextStyle(fontSize: 20)),
-            title: Text(path, textDirection: TextDirection.ltr, style: const TextStyle(fontFamily: 'monospace', fontSize: 14)),
+            title: Text(
+              path,
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+            ),
             subtitle: Text('$lines سطر'),
             trailing: IconButton(
               icon: const Icon(Icons.delete_outline, size: 20),
@@ -70,7 +78,11 @@ class FilesTab extends StatelessWidget {
                 context.read<CodeService>().save(project);
               },
             ),
-            onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => EditorScreen(project: project, path: path))),
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => EditorScreen(project: project, path: path),
+              ),
+            ),
           );
         },
       ),
@@ -122,7 +134,8 @@ class _EditorScreenState extends State<EditorScreen> {
     widget.project.files[widget.path] = _controller.text;
     context.read<CodeService>().save(widget.project);
     setState(() => _dirty = false);
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('تم الحفظ 💾'), duration: Duration(seconds: 1)));
+    ScaffoldMessenger.of(context)
+        .showSnackBar(const SnackBar(content: Text('تم الحفظ 💾'), duration: Duration(seconds: 1)));
   }
 
   @override
@@ -144,8 +157,10 @@ class _EditorScreenState extends State<EditorScreen> {
         backgroundColor: const Color(0xFF1E1A2E),
         appBar: AppBar(
           foregroundColor: Colors.white,
-          title: Text(widget.path.split('/').last,
-              style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 16)),
+          title: Text(
+            widget.path.split('/').last,
+            style: const TextStyle(color: Colors.white, fontFamily: 'monospace', fontSize: 16),
+          ),
           actions: [
             IconButton(
               icon: const Icon(Icons.copy_all_outlined),
@@ -172,9 +187,7 @@ class _EditorScreenState extends State<EditorScreen> {
               ),
             ),
             indicatorBuilder: (context, editingController, chunkController, notifier) => Row(
-              children: [
-                DefaultCodeLineNumber(controller: editingController, notifier: notifier),
-              ],
+              children: [DefaultCodeLineNumber(controller: editingController, notifier: notifier)],
             ),
           ),
         ),

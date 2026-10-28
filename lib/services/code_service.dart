@@ -16,9 +16,9 @@ enum ProjectType { web, flutter }
 
 extension ProjectTypeInfo on ProjectType {
   String get label => switch (this) {
-        ProjectType.web => 'تطبيق ويب (معاينة فورية)',
-        ProjectType.flutter => 'تطبيق Flutter أصلي',
-      };
+    ProjectType.web => 'تطبيق ويب (معاينة فورية)',
+    ProjectType.flutter => 'تطبيق Flutter أصلي',
+  };
 }
 
 class CodeProject {
@@ -29,9 +29,9 @@ class CodeProject {
     Map<String, String>? files,
     List<ChatMessage>? chat,
     DateTime? updated,
-  })  : files = files ?? {},
-        chat = chat ?? [],
-        updated = updated ?? DateTime.now();
+  }) : files = files ?? {},
+       chat = chat ?? [],
+       updated = updated ?? DateTime.now();
 
   final String id;
   String name;
@@ -47,22 +47,22 @@ class CodeProject {
   }
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'type': type.name,
-        'files': files,
-        'chat': chat.map((m) => m.toJson()).toList(),
-        'updated': updated.toIso8601String(),
-      };
+    'id': id,
+    'name': name,
+    'type': type.name,
+    'files': files,
+    'chat': chat.map((m) => m.toJson()).toList(),
+    'updated': updated.toIso8601String(),
+  };
 
   factory CodeProject.fromJson(Map<String, dynamic> j) => CodeProject(
-        id: j['id'] as String,
-        name: j['name'] as String,
-        type: ProjectType.values.byName(j['type'] as String),
-        files: Map<String, String>.from(j['files'] as Map),
-        chat: (j['chat'] as List? ?? []).map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList(),
-        updated: DateTime.tryParse(j['updated'] as String? ?? ''),
-      );
+    id: j['id'] as String,
+    name: j['name'] as String,
+    type: ProjectType.values.byName(j['type'] as String),
+    files: Map<String, String>.from(j['files'] as Map),
+    chat: (j['chat'] as List? ?? []).map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList(),
+    updated: DateTime.tryParse(j['updated'] as String? ?? ''),
+  );
 }
 
 /// A change the agent made, shown to the user as a list after each turn.
@@ -124,7 +124,10 @@ Design bar: it must look like a top-rated, premium mobile app, never like a tuto
 - Friendly empty states with an emoji, toasts for feedback, loading states, subtle micro-animations.
 - Dark mode with prefers-color-scheme. RTL (dir="rtl", lang="ar") when the app is Arabic.
 - Real, working logic end to end: localStorage persistence, validation, no placeholders, no TODO, no lorem ipsum (realistic Arabic sample content).
-- You may load well-known libraries from cdnjs.cloudflare.com or cdn.jsdelivr.net (e.g. pdf-lib, Chart.js, jsPDF, mammoth) when they make a feature work for real.'''
+- You may load well-known libraries from cdnjs.cloudflare.com or cdn.jsdelivr.net (e.g. pdf-lib, Chart.js, jsPDF, mammoth) when they make a feature work for real.
+- Presentation / slides: a full-screen deck in index.html, one <section> per slide with real content (titles, short points, stats, charts with Chart.js or CSS), a distinct layout per slide, swipe + arrow keys + buttons, slide counter, progress bar, smooth transitions, and an "export PDF" button using window.print with print CSS (one slide per page).
+- Website: a polished responsive landing site (mobile and desktop) with hero, sections, cards, testimonials, contact form/WhatsApp link, sticky nav with smooth scroll and reveal-on-scroll animations.
+- Game: a complete canvas game with touch controls sized for phones, start screen, score + best score in localStorage, increasing difficulty, pause, game-over and restart, juicy effects (particles, screen shake), sounds via WebAudio, and 60fps requestAnimationFrame loop that handles devicePixelRatio.'''
       : '''
 Design bar: it must look like a top-rated, premium Play Store app.
 - Material 3, ColorScheme.fromSeed with a vibrant seed (#7B5CFF unless the idea suggests another), light and dark themes.
@@ -157,10 +160,9 @@ Do not wrap files in markdown code fences.''';
   static final _deleteRe = RegExp(r'<delete path="([^"]+)"\s*/>');
   static final _importRe = RegExp('import\\s+[\'"]package:([a-z0-9_]+)/');
 
-  /// Gemini (free key) writes far better code than the keyless default, so the
-  /// agent uses it whenever a key exists.
-  TextBackend? get _backend =>
-      _settings.textKey(TextBackend.gemini).isNotEmpty ? TextBackend.gemini : null;
+  /// The agent uses the strongest model that has a key (Claude, then ChatGPT,
+  /// then Gemini) because those write far better code than the keyless default.
+  TextBackend get _backend => _settings.bestTextBackend;
 
   /// Asks the model and survives dropped connections: retries, and when an
   /// answer was cut off part-way, asks it to continue from where it stopped.
@@ -179,7 +181,8 @@ Do not wrap files in markdown code fences.''';
               ChatMessage(role: Role.assistant, text: out.toString()),
               ChatMessage(
                 role: Role.user,
-                text: 'Your previous answer was cut off. Continue EXACTLY from the last character. '
+                text:
+                    'Your previous answer was cut off. Continue EXACTLY from the last character. '
                     'Do not repeat anything and do not add any preface.',
               ),
             ];
@@ -202,8 +205,7 @@ Do not wrap files in markdown code fences.''';
     return out.toString();
   }
 
-  static bool _openFileTag(String s) =>
-      '<file path='.allMatches(s).length > '</file>'.allMatches(s).length;
+  static bool _openFileTag(String s) => '<file path='.allMatches(s).length > '</file>'.allMatches(s).length;
 
   /// Builds or changes the project. A new project goes through plan → write
   /// each file → review; later requests edit the existing files in one pass.
@@ -345,13 +347,14 @@ Every feature the user asked for must be in features_ar and actually implemented
         budget -= body.length;
         ctx.writeln('<file path="${e.key}">\n$body\n</file>');
       }
-      ctx.writeln('\nNow write the COMPLETE content of `$path` (${f['purpose']}). '
-          'It must work with the files above and the ones still to be written. '
-          'Output ONLY the raw file content: no explanation, no markdown fences.');
-      final raw = await _ask(
-        [ChatMessage(role: Role.user, text: ctx.toString())],
-        'You are a world-class engineer and UI designer.\n${_designGuide(p.type)}',
+      ctx.writeln(
+        '\nNow write the COMPLETE content of `$path` (${f['purpose']}). '
+        'It must work with the files above and the ones still to be written. '
+        'Output ONLY the raw file content: no explanation, no markdown fences.',
       );
+      final raw = await _ask([
+        ChatMessage(role: Role.user, text: ctx.toString()),
+      ], 'You are a world-class engineer and UI designer.\n${_designGuide(p.type)}');
       final content = _stripFences(raw);
       written[path] = content;
       p.files[path] = content;
@@ -384,7 +387,8 @@ FULL FILE CONTENT
       }
     }
     progress['مراجعة الكود'] = '✅';
-    reply.text = '${board()}\n\n🎉 **تطبيقك جاهز!** '
+    reply.text =
+        '${board()}\n\n🎉 **تطبيقك جاهز!** '
         '${web ? 'افتح تبويب **معاينة** لتجربته، ثم' : 'اذهب إلى'} **بناء APK** لتثبيته على جوالك. واطلب أي تعديل هنا.';
     notifyListeners();
     return [for (final path in p.files.keys) FileChange(path)];
@@ -439,8 +443,9 @@ FULL FILE CONTENT
   // ---------------------------------------------------------------- starters
 
   Map<String, String> _starter(String name, ProjectType type) => switch (type) {
-        ProjectType.web => {
-            'index.html': '''<!doctype html>
+    ProjectType.web => {
+      'index.html':
+          '''<!doctype html>
 <html lang="ar" dir="rtl">
 <head>
   <meta charset="utf-8">
@@ -458,20 +463,21 @@ FULL FILE CONTENT
 </body>
 </html>
 ''',
-            'style.css': '''body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;
+      'style.css': '''body{margin:0;min-height:100vh;display:grid;place-items:center;font-family:system-ui,sans-serif;
 background:linear-gradient(135deg,#7B5CFF,#FF4FA3,#FF9F43)}
 .card{background:#fff;border-radius:24px;padding:32px;text-align:center;box-shadow:0 20px 60px #0003;width:min(88vw,380px)}
 h1{margin:0 0 8px;color:#1B1530}
 button{border:0;border-radius:14px;padding:12px 24px;font-size:16px;color:#fff;background:#7B5CFF}
 ''',
-            'app.js': '''document.getElementById('btn').addEventListener('click', () => {
+      'app.js': '''document.getElementById('btn').addEventListener('click', () => {
   alert('مرحباً من Mind Ai 👋');
 });
 ''',
-          },
-        ProjectType.flutter => {
-            'pubspec.yaml': flutterPubspec(_slugOf(name), name),
-            'lib/main.dart': '''import 'package:flutter/material.dart';
+    },
+    ProjectType.flutter => {
+      'pubspec.yaml': flutterPubspec(_slugOf(name), name),
+      'lib/main.dart':
+          '''import 'package:flutter/material.dart';
 
 void main() => runApp(const App());
 
@@ -492,15 +498,21 @@ class App extends StatelessWidget {
   }
 }
 ''',
-          },
-      };
+    },
+  };
 
   static String _slugOf(String name) {
     final s = name.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_+|_+$'), '');
     return s.isEmpty || RegExp(r'^[0-9]').hasMatch(s) ? 'my_app' : s;
   }
 
-  static String flutterPubspec(String slug, String name, {List<String> deps = const [], List<String> assets = const []}) => '''
+  static String flutterPubspec(
+    String slug,
+    String name, {
+    List<String> deps = const [],
+    List<String> assets = const [],
+  }) =>
+      '''
 name: $slug
 description: "$name — built with Mind Ai"
 publish_to: 'none'

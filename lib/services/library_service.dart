@@ -1,30 +1,31 @@
 import 'dart:convert';
 import 'dart:io';
 
-
 import 'package:flutter/foundation.dart';
 import 'package:gal/gal.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:uuid/uuid.dart';
 
-enum CreationKind { image, sticker, animatedSticker, face, video }
+enum CreationKind { image, sticker, animatedSticker, face, video, voice }
 
 extension CreationKindInfo on CreationKind {
   String get label => switch (this) {
-        CreationKind.image => 'صورة',
-        CreationKind.sticker => 'ملصق',
-        CreationKind.animatedSticker => 'ملصق متحرك',
-        CreationKind.face => 'فيس',
-        CreationKind.video => 'فيديو',
-      };
+    CreationKind.image => 'صورة',
+    CreationKind.sticker => 'ملصق',
+    CreationKind.animatedSticker => 'ملصق متحرك',
+    CreationKind.face => 'فيس',
+    CreationKind.video => 'فيديو',
+    CreationKind.voice => 'صوت',
+  };
 
   String get ext => switch (this) {
-        CreationKind.image || CreationKind.face => 'jpg',
-        CreationKind.sticker => 'png',
-        CreationKind.animatedSticker => 'gif',
-        CreationKind.video => 'mp4',
-      };
+    CreationKind.image || CreationKind.face => 'jpg',
+    CreationKind.sticker => 'png',
+    CreationKind.animatedSticker => 'gif',
+    CreationKind.video => 'mp4',
+    CreationKind.voice => 'wav',
+  };
 }
 
 class Creation {
@@ -36,16 +37,21 @@ class Creation {
   final String prompt;
   final DateTime time;
 
-  Map<String, dynamic> toJson() =>
-      {'id': id, 'kind': kind.name, 'path': path, 'prompt': prompt, 'time': time.toIso8601String()};
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'kind': kind.name,
+    'path': path,
+    'prompt': prompt,
+    'time': time.toIso8601String(),
+  };
 
   factory Creation.fromJson(Map<String, dynamic> j) => Creation(
-        id: j['id'] as String,
-        kind: CreationKind.values.byName(j['kind'] as String),
-        path: j['path'] as String,
-        prompt: j['prompt'] as String? ?? '',
-        time: DateTime.parse(j['time'] as String),
-      );
+    id: j['id'] as String,
+    kind: CreationKind.values.byName(j['kind'] as String),
+    path: j['path'] as String,
+    prompt: j['prompt'] as String? ?? '',
+    time: DateTime.parse(j['time'] as String),
+  );
 }
 
 /// Keeps every generated file on the phone and lists them in "My creations".
@@ -97,6 +103,5 @@ class LibraryService extends ChangeNotifier {
     }
   }
 
-  static Future<void> share(String path, {String? text}) =>
-      Share.shareXFiles([XFile(path)], text: text);
+  static Future<void> share(String path, {String? text}) => Share.shareXFiles([XFile(path)], text: text);
 }

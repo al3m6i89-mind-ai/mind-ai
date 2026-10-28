@@ -7,6 +7,7 @@ import 'app/theme.dart';
 import 'providers/image_gen.dart';
 import 'providers/text_provider.dart';
 import 'providers/video_provider.dart';
+import 'providers/voice_gen.dart';
 import 'services/build_service.dart';
 import 'services/chat_service.dart';
 import 'services/code_service.dart';
@@ -38,6 +39,7 @@ Future<void> main() async {
         Provider.value(value: text),
         Provider.value(value: images),
         Provider(create: (_) => VideoProvider(settings)),
+        Provider(create: (_) => VoiceGen(settings)),
       ],
       child: const MindApp(),
     ),

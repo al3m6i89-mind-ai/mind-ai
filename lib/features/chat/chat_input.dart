@@ -55,7 +55,9 @@ class _ChatInputState extends State<ChatInput> {
           decoration: BoxDecoration(
             color: card,
             borderRadius: BorderRadius.circular(26),
-            boxShadow: [BoxShadow(color: MindColors.violet.withValues(alpha: 0.12), blurRadius: 20, offset: const Offset(0, 6))],
+            boxShadow: [
+              BoxShadow(color: MindColors.violet.withValues(alpha: 0.12), blurRadius: 20, offset: const Offset(0, 6)),
+            ],
           ),
           padding: const EdgeInsets.all(6),
           child: Column(

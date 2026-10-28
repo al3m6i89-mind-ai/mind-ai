@@ -37,12 +37,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> with SingleTickerProv
     try {
       final changes = await context.read<CodeService>().runAgent(widget.project, text, errorLog: log);
       if (!mounted || changes.isEmpty) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('✅ تم تحديث ${changes.length} ملف'),
-        action: widget.project.type == ProjectType.web
-            ? SnackBarAction(label: 'معاينة', onPressed: () => _tabs.animateTo(2))
-            : null,
-      ));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('✅ تم تحديث ${changes.length} ملف'),
+          action: widget.project.type == ProjectType.web
+              ? SnackBarAction(label: 'معاينة', onPressed: () => _tabs.animateTo(2))
+              : null,
+        ),
+      );
     } catch (e) {
       if (mounted) showError(context, e);
     }
@@ -117,8 +119,11 @@ class _AgentTab extends StatelessWidget {
                         const Text('🤖', style: TextStyle(fontSize: 56)),
                         const Text('وكيل الأكواد جاهز', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
                         const SizedBox(height: 6),
-                        const Text('قل له وش تبي يبني أو يعدّل، وهو يكتب الملفات كاملة.',
-                            textAlign: TextAlign.center, style: TextStyle(color: MindColors.muted)),
+                        const Text(
+                          'قل له وش تبي يبني أو يعدّل، وهو يكتب الملفات كاملة.',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: MindColors.muted),
+                        ),
                         const SizedBox(height: 12),
                         const QuotaPill(Usage.codeAgent),
                       ],
@@ -144,11 +149,13 @@ class _AgentTab extends StatelessWidget {
                           borderRadius: BorderRadius.circular(18),
                         ),
                         child: me
-                            ? Text(m.text.length > 400 ? '${m.text.substring(0, 400)}…' : m.text,
-                                style: const TextStyle(color: Colors.white))
+                            ? Text(
+                                m.text.length > 400 ? '${m.text.substring(0, 400)}…' : m.text,
+                                style: const TextStyle(color: Colors.white),
+                              )
                             : m.text.isEmpty
-                                ? const Text('⏳ الوكيل يفكر ويكتب الكود…')
-                                : MarkdownBody(data: _livePreview(m.text)),
+                            ? const Text('⏳ الوكيل يفكر ويكتب الكود…')
+                            : MarkdownBody(data: _livePreview(m.text)),
                       ),
                     );
                   },
@@ -169,11 +176,7 @@ class _AgentTab extends StatelessWidget {
               ],
             ),
           ),
-        ChatInput(
-          busy: code.busy,
-          hint: 'اطلب ميزة أو تعديل…',
-          onSend: (text, _) => onAsk(text),
-        ),
+        ChatInput(busy: code.busy, hint: 'اطلب ميزة أو تعديل…', onSend: (text, _) => onAsk(text)),
       ],
     );
   }

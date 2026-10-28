@@ -6,6 +6,9 @@ import 'package:provider/provider.dart';
 
 import '../../app/theme.dart';
 import '../../providers/image_gen.dart';
+import '../../providers/tools.dart';
+import '../../services/settings_service.dart';
+import '../../widgets/tool_picker.dart';
 import '../../services/chat_service.dart';
 import '../../services/library_service.dart';
 import '../../services/media_tools.dart';
@@ -60,23 +63,36 @@ class _GeneratorPageState extends State<GeneratorPage> {
 
   StudioTool get tool => widget.tool;
 
+  late ImageTool _ai = ImageTool.byId(context.read<SettingsService>().imageToolId);
+
+  /// Points for one run: the model's price, plus the extra pose drawings that
+  /// make an animated sticker really move.
+  int get _points => switch (tool) {
+    StudioTool.removeBg => 1,
+    StudioTool.sticker => _ai.points + 1,
+    StudioTool.animatedSticker => _ai.points + 1 + (context.read<ImageGen>().canEdit ? 6 : 0),
+    _ => _ai.points,
+  };
+
   Usage get _usage => switch (tool) {
-        StudioTool.sticker || StudioTool.animatedSticker || StudioTool.removeBg => Usage.sticker,
-        _ => Usage.image,
-      };
+    StudioTool.sticker || StudioTool.animatedSticker || StudioTool.removeBg => Usage.sticker,
+    _ => Usage.image,
+  };
 
   CreationKind get _kind => switch (tool) {
-        StudioTool.sticker || StudioTool.removeBg => CreationKind.sticker,
-        StudioTool.animatedSticker => CreationKind.animatedSticker,
-        StudioTool.face => CreationKind.face,
-        _ => CreationKind.image,
-      };
+    StudioTool.sticker || StudioTool.removeBg => CreationKind.sticker,
+    StudioTool.animatedSticker => CreationKind.animatedSticker,
+    StudioTool.face => CreationKind.face,
+    _ => CreationKind.image,
+  };
 
   String _recipe(String english) {
     final style = _style.suffix.isEmpty ? '' : ', ${_style.suffix}';
     return switch (tool) {
       StudioTool.sticker || StudioTool.animatedSticker =>
-        'cute sticker of $english$style, die-cut sticker, bold clean outline, centered, full body, plain pure white background, no text',
+        'a single $english$style, one character only, full body, centered, cute 2d sticker illustration, '
+            'isolated on a plain pure white background, no border, no outline, no shadow, no scenery, '
+            'no extra objects, no duplicates, no text, no watermark',
       StudioTool.face => '${_faceKinds[_face].$2}, $english$style',
       StudioTool.photoEdit => 'Edit this photo: $english. Keep the person\'s identity and face unchanged$style',
       _ => '$english$style',
@@ -100,14 +116,14 @@ class _GeneratorPageState extends State<GeneratorPage> {
     final subs = context.read<SubscriptionService>();
     final library = context.read<LibraryService>();
     try {
-      subs.ensure(_usage);
+      subs.ensure(_usage, points: _points);
       setState(() {
         _busy = true;
         _status = 'أحذف الخلفية… ✂️';
       });
       final png = await MediaTools.removeBackground(_photo!);
       await library.save(png, CreationKind.sticker, 'حذف الخلفية', ext: 'png');
-      await subs.consume(_usage);
+      await subs.consume(_usage, points: _points);
       setState(() {
         _result = png;
         _resultExt = 'png';
@@ -133,7 +149,8 @@ class _GeneratorPageState extends State<GeneratorPage> {
     final library = context.read<LibraryService>();
     FocusScope.of(context).unfocus();
     try {
-      subs.ensure(_usage);
+      final points = _points;
+      subs.ensure(_usage, points: points);
       setState(() {
         _busy = true;
         _status = 'أفهم فكرتك…';
@@ -147,6 +164,8 @@ class _GeneratorPageState extends State<GeneratorPage> {
         width: square ? 1024 : _ratio.w,
         height: square ? 1024 : _ratio.h,
         reference: tool == StudioTool.photoEdit || (tool == StudioTool.face && _photo != null) ? _photo : null,
+        backend: _ai.backend,
+        model: _ai.model,
       );
 
       var bytes = out.bytes;
@@ -158,12 +177,22 @@ class _GeneratorPageState extends State<GeneratorPage> {
         _stillSticker = bytes;
         if (tool == StudioTool.animatedSticker) {
           setState(() => _status = 'أحرّك الملصق… 💃');
-          bytes = await MediaTools.animateSticker(bytes, _motion);
+          final poses = images.canEdit ? await _poses(images, out.bytes, english) : null;
+          bytes = poses != null
+              ? await MediaTools.animatePoses([_stillSticker!, ...poses])
+              : await MediaTools.animateSticker(bytes, _motion);
           ext = 'gif';
+          if (poses == null && !images.canEdit && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('للحركة الحقيقية (يلوّح ويرقص فعلاً) أضف مفتاح Gemini المجاني أو Seedream من الإعدادات.'),
+              ),
+            );
+          }
         }
       }
       await library.save(bytes, _kind, text, ext: ext);
-      await subs.consume(_usage);
+      await subs.consume(_usage, points: points);
       setState(() {
         _result = bytes;
         _resultExt = ext;
@@ -172,6 +201,31 @@ class _GeneratorPageState extends State<GeneratorPage> {
       if (mounted) showError(context, e);
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Draws the same character at two stages of the action asked for (e.g. the
+  /// hand up and down for a wave), so the GIF shows the real movement.
+  Future<List<Uint8List>?> _poses(ImageGen images, Uint8List base, String english) async {
+    const stages = [
+      'at the start of the movement',
+      'at the peak of the movement, clearly different pose (for a wave: hand raised high)',
+    ];
+    try {
+      final out = <Uint8List>[];
+      for (final (i, stage) in stages.indexed) {
+        setState(() => _status = 'أرسم حركة ${i + 1} من ${stages.length}… 🎞️');
+        final pose = await images.generate(
+          'Redraw this exact same character doing: $english, $stage. Keep the identical character design, '
+          'colors, proportions, size and art style, one character only, centered, full body, '
+          'on the same plain pure white background, no text.',
+          reference: base,
+        );
+        out.add(await MediaTools.makeSticker(pose.bytes));
+      }
+      return out;
+    } catch (_) {
+      return null;
     }
   }
 
@@ -207,63 +261,100 @@ class _GeneratorPageState extends State<GeneratorPage> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          Row(children: [Expanded(child: Text(tool.subtitle, style: const TextStyle(color: MindColors.muted))), QuotaPill(_usage)]),
+          Row(
+            children: [
+              Expanded(
+                child: Text(tool.subtitle, style: const TextStyle(color: MindColors.muted)),
+              ),
+              QuotaPill(_usage),
+            ],
+          ),
           const SizedBox(height: 12),
+          if (tool != StudioTool.removeBg) ...[
+            const _Label('أداة الذكاء الاصطناعي'),
+            ToolPicker(
+              selected: _ai.id,
+              onSelected: (id) {
+                setState(() => _ai = ImageTool.byId(id));
+                context.read<SettingsService>().setImageToolId(id);
+              },
+              choices: [
+                for (final t in ImageTool.all)
+                  if (t.backend != ImageBackend.custom || t.available(context.read<SettingsService>()))
+                    ToolChoice(
+                      id: t.id,
+                      label: t.label,
+                      emoji: t.emoji,
+                      points: t.points,
+                      note: t.note,
+                      needs: t.needs,
+                      available: t.available(context.read<SettingsService>()),
+                    ),
+              ],
+            ),
+            const SizedBox(height: 12),
+          ],
           if (tool == StudioTool.photoEdit || tool == StudioTool.face || tool == StudioTool.removeBg) _photoPicker(),
           if (tool == StudioTool.removeBg)
-            const Text('يشتغل أفضل مع الصور اللي خلفيتها لون واحد (أبيض، سادة…). مجاني ويعمل بدون إنترنت.',
-                style: TextStyle(color: MindColors.muted, fontSize: 13)),
+            const Text(
+              'يشتغل أفضل مع الصور اللي خلفيتها لون واحد (أبيض، سادة…). مجاني ويعمل بدون إنترنت.',
+              style: TextStyle(color: MindColors.muted, fontSize: 13),
+            ),
           if (tool != StudioTool.removeBg) ...[
-          TextField(
-            controller: _prompt,
-            minLines: 2,
-            maxLines: 5,
-            decoration: InputDecoration(hintText: _hint),
-          ),
-          const SizedBox(height: 14),
-          if (tool == StudioTool.face) ...[
-            const _Label('نوع الفيس'),
-            _chips(_faceKinds.map((f) => f.$1).toList(), _face, (i) => setState(() => _face = i)),
-          ],
-          if (tool == StudioTool.animatedSticker) ...[
-            const _Label('الحركة'),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final m in StickerMotion.values)
-                  ChoiceChip(
-                    label: Text('${m.emoji} ${m.label}'),
-                    selected: _motion == m,
-                    onSelected: (_) => _remotion(m),
-                  ),
-              ],
+            TextField(
+              controller: _prompt,
+              minLines: 2,
+              maxLines: 5,
+              decoration: InputDecoration(hintText: _hint),
             ),
-            const SizedBox(height: 10),
-          ],
-          const _Label('الأسلوب'),
-          SizedBox(
-            height: 44,
-            child: ListView(
-              scrollDirection: Axis.horizontal,
-              children: [
-                for (final s in ImageStyle.all)
-                  Padding(
-                    padding: const EdgeInsetsDirectional.only(end: 8),
-                    child: ChoiceChip(
-                      label: Text('${s.emoji} ${s.label}'),
-                      selected: _style == s,
-                      onSelected: (_) => setState(() => _style = s),
+            const SizedBox(height: 14),
+            if (tool == StudioTool.face) ...[
+              const _Label('نوع الفيس'),
+              _chips(_faceKinds.map((f) => f.$1).toList(), _face, (i) => setState(() => _face = i)),
+            ],
+            if (tool == StudioTool.animatedSticker) ...[
+              const _Label('الحركة'),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  for (final m in StickerMotion.values)
+                    ChoiceChip(
+                      label: Text('${m.emoji} ${m.label}'),
+                      selected: _motion == m,
+                      onSelected: (_) => _remotion(m),
                     ),
-                  ),
-              ],
+                ],
+              ),
+              const SizedBox(height: 10),
+            ],
+            const _Label('الأسلوب'),
+            SizedBox(
+              height: 44,
+              child: ListView(
+                scrollDirection: Axis.horizontal,
+                children: [
+                  for (final s in ImageStyle.all)
+                    Padding(
+                      padding: const EdgeInsetsDirectional.only(end: 8),
+                      child: ChoiceChip(
+                        label: Text('${s.emoji} ${s.label}'),
+                        selected: _style == s,
+                        onSelected: (_) => setState(() => _style = s),
+                      ),
+                    ),
+                ],
+              ),
             ),
-          ),
-          if (tool == StudioTool.image) ...[
-            const SizedBox(height: 10),
-            const _Label('المقاس'),
-            _chips(_ratios.map((r) => r.label).toList(), _ratios.indexOf(_ratio), (i) => setState(() => _ratio = _ratios[i])),
-          ],
+            if (tool == StudioTool.image) ...[
+              const SizedBox(height: 10),
+              const _Label('المقاس'),
+              _chips(
+                _ratios.map((r) => r.label).toList(),
+                _ratios.indexOf(_ratio),
+                (i) => setState(() => _ratio = _ratios[i]),
+              ),
+            ],
           ],
           const SizedBox(height: 18),
           GradientButton(
@@ -281,52 +372,52 @@ class _GeneratorPageState extends State<GeneratorPage> {
   }
 
   String get _hint => switch (tool) {
-        StudioTool.sticker => 'مثال: قطة تلبس نظارة شمسية وتضحك',
-        StudioTool.animatedSticker => 'مثال: بطريق يلوّح بيده',
-        StudioTool.face => 'مثال: شاب عربي بلحية خفيفة وابتسامة',
-        StudioTool.photoEdit => 'مثال: غيّر الخلفية لشاطئ وقت الغروب',
-        _ => 'صف الصورة التي تتخيلها بالتفصيل…',
-      };
+    StudioTool.sticker => 'مثال: قطة تلبس نظارة شمسية وتضحك',
+    StudioTool.animatedSticker => 'مثال: بطريق يلوّح بيده',
+    StudioTool.face => 'مثال: شاب عربي بلحية خفيفة وابتسامة',
+    StudioTool.photoEdit => 'مثال: غيّر الخلفية لشاطئ وقت الغروب',
+    _ => 'صف الصورة التي تتخيلها بالتفصيل…',
+  };
 
   Widget _photoPicker() => Padding(
-        padding: const EdgeInsets.only(bottom: 12),
-        child: InkWell(
-          onTap: _pickPhoto,
+    padding: const EdgeInsets.only(bottom: 12),
+    child: InkWell(
+      onTap: _pickPhoto,
+      borderRadius: BorderRadius.circular(18),
+      child: Ink(
+        height: 120,
+        decoration: BoxDecoration(
+          color: Theme.of(context).cardTheme.color,
           borderRadius: BorderRadius.circular(18),
-          child: Ink(
-            height: 120,
-            decoration: BoxDecoration(
-              color: Theme.of(context).cardTheme.color,
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: MindColors.violet.withValues(alpha: 0.3)),
-            ),
-            child: _photo == null
-                ? Center(
-                    child: Text(
-                      tool == StudioTool.face
-                          ? '📸 أضف صورتك (اختياري) لتحويلها لفيس'
-                          : tool == StudioTool.removeBg
-                              ? '📸 اختر الصورة اللي تبي تحذف خلفيتها'
-                              : '📸 اختر الصورة التي تريد تعديلها',
-                      style: const TextStyle(fontWeight: FontWeight.w700, color: MindColors.violet),
-                    ),
-                  )
-                : ClipRRect(
-                    borderRadius: BorderRadius.circular(18),
-                    child: Image.memory(_photo!, fit: BoxFit.cover, width: double.infinity),
-                  ),
-          ),
+          border: Border.all(color: MindColors.violet.withValues(alpha: 0.3)),
         ),
-      );
+        child: _photo == null
+            ? Center(
+                child: Text(
+                  tool == StudioTool.face
+                      ? '📸 أضف صورتك (اختياري) لتحويلها لفيس'
+                      : tool == StudioTool.removeBg
+                      ? '📸 اختر الصورة اللي تبي تحذف خلفيتها'
+                      : '📸 اختر الصورة التي تريد تعديلها',
+                  style: const TextStyle(fontWeight: FontWeight.w700, color: MindColors.violet),
+                ),
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(18),
+                child: Image.memory(_photo!, fit: BoxFit.cover, width: double.infinity),
+              ),
+      ),
+    ),
+  );
 
   Widget _chips(List<String> labels, int selected, ValueChanged<int> onTap) => Wrap(
-        spacing: 8,
-        runSpacing: 8,
-        children: [
-          for (var i = 0; i < labels.length; i++)
-            ChoiceChip(label: Text(labels[i]), selected: selected == i, onSelected: (_) => onTap(i)),
-        ],
-      );
+    spacing: 8,
+    runSpacing: 8,
+    children: [
+      for (var i = 0; i < labels.length; i++)
+        ChoiceChip(label: Text(labels[i]), selected: selected == i, onSelected: (_) => onTap(i)),
+    ],
+  );
 
   Widget _resultCard(LibraryService library) {
     final sticker = _resultExt != 'jpg';
@@ -338,10 +429,7 @@ class _GeneratorPageState extends State<GeneratorPage> {
           children: [
             Container(
               decoration: sticker
-                  ? BoxDecoration(
-                      borderRadius: BorderRadius.circular(16),
-                      color: const Color(0xFFEDEAF7),
-                    )
+                  ? BoxDecoration(borderRadius: BorderRadius.circular(16), color: const Color(0xFFEDEAF7))
                   : null,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(16),
@@ -375,10 +463,7 @@ class _GeneratorPageState extends State<GeneratorPage> {
                   ),
                 ),
                 const SizedBox(width: 8),
-                IconButton.filledTonal(
-                  icon: const Icon(Icons.refresh_rounded),
-                  onPressed: _busy ? null : _generate,
-                ),
+                IconButton.filledTonal(icon: const Icon(Icons.refresh_rounded), onPressed: _busy ? null : _generate),
               ],
             ),
           ],
@@ -394,7 +479,7 @@ class _Label extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
-      );
+    padding: const EdgeInsets.only(bottom: 6),
+    child: Text(text, style: const TextStyle(fontWeight: FontWeight.w800)),
+  );
 }

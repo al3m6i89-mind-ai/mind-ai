@@ -46,14 +46,12 @@ class HomeScreen extends StatelessWidget {
               avatar: const Icon(Icons.workspace_premium, size: 18, color: MindColors.orange),
               label: Text(plan, style: const TextStyle(fontWeight: FontWeight.w800)),
               shape: const StadiumBorder(),
-              onPressed: () =>
-                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
+              onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
             ),
           ),
           IconButton(
             icon: const Icon(Icons.settings_outlined),
-            onPressed: () =>
-                Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ],
       ),
@@ -73,8 +71,10 @@ class HomeScreen extends StatelessWidget {
                   ),
                 ),
                 const Center(
-                  child: Text('بماذا أساعدك اليوم؟',
-                      style: TextStyle(fontSize: 16, color: MindColors.muted, fontWeight: FontWeight.w600)),
+                  child: Text(
+                    'بماذا أساعدك اليوم؟',
+                    style: TextStyle(fontSize: 16, color: MindColors.muted, fontWeight: FontWeight.w600),
+                  ),
                 ),
                 const SizedBox(height: 20),
                 GridView.count(
@@ -97,7 +97,6 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'كود كامل + APK',
                       emoji: '📱',
                       gradient: MindColors.cool,
-                      badge: 'جديد',
                       onTap: () => Shell.goTo(context, 2),
                     ),
                     ToolTile(
@@ -114,6 +113,15 @@ class HomeScreen extends StatelessWidget {
                       gradient: MindColors.fresh,
                       onTap: () => StudioScreen.open(context, StudioTool.video),
                     ),
+                    for (final t in const [StudioTool.slides, StudioTool.website, StudioTool.game, StudioTool.voice])
+                      ToolTile(
+                        title: t.title,
+                        subtitle: t.subtitle,
+                        emoji: t.emoji,
+                        gradient: t.gradient,
+                        badge: 'جديد',
+                        onTap: () => StudioScreen.open(context, t),
+                      ),
                   ],
                 ),
                 const SizedBox(height: 22),
@@ -142,11 +150,13 @@ class HomeScreen extends StatelessWidget {
                               Text(p.emoji, style: const TextStyle(fontSize: 30)),
                               const SizedBox(height: 4),
                               Text(p.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-                              Text(p.tagline,
-                                  maxLines: 2,
-                                  textAlign: TextAlign.center,
-                                  overflow: TextOverflow.ellipsis,
-                                  style: const TextStyle(fontSize: 11, color: MindColors.muted)),
+                              Text(
+                                p.tagline,
+                                maxLines: 2,
+                                textAlign: TextAlign.center,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(fontSize: 11, color: MindColors.muted),
+                              ),
                             ],
                           ),
                         ),
@@ -178,12 +188,14 @@ class HomeScreen extends StatelessWidget {
               ],
             ),
           ),
-          ChatInput(onSend: (text, image) {
-            final chat = context.read<ChatService>();
-            final c = chat.start('mind');
-            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(conversation: c)));
-            chat.send(c, text, image: image);
-          }),
+          ChatInput(
+            onSend: (text, image) {
+              final chat = context.read<ChatService>();
+              final c = chat.start('mind');
+              Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(conversation: c)));
+              chat.send(c, text, image: image);
+            },
+          ),
         ],
       ),
     );
@@ -248,14 +260,14 @@ class _HistoryDrawer extends StatelessWidget {
             const Padding(
               padding: EdgeInsets.all(16),
               child: Row(
-                children: [
-                  GradientText('سجل المحادثات', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
-                ],
+                children: [GradientText('سجل المحادثات', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w900))],
               ),
             ),
             Expanded(
               child: chat.conversations.isEmpty
-                  ? const Center(child: Text('لا توجد محادثات بعد', style: TextStyle(color: MindColors.muted)))
+                  ? const Center(
+                      child: Text('لا توجد محادثات بعد', style: TextStyle(color: MindColors.muted)),
+                    )
                   : ListView.builder(
                       itemCount: chat.conversations.length,
                       itemBuilder: (context, i) {
@@ -271,8 +283,7 @@ class _HistoryDrawer extends StatelessWidget {
                           ),
                           onTap: () {
                             Navigator.pop(context);
-                            Navigator.of(context)
-                                .push(MaterialPageRoute(builder: (_) => ChatScreen(conversation: c)));
+                            Navigator.of(context).push(MaterialPageRoute(builder: (_) => ChatScreen(conversation: c)));
                           },
                         );
                       },

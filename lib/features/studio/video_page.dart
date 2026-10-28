@@ -8,11 +8,15 @@ import 'package:provider/provider.dart';
 import 'package:video_player/video_player.dart';
 
 import '../../app/theme.dart';
+import '../../providers/ai_models.dart';
 import '../../providers/image_gen.dart';
+import '../../providers/tools.dart';
+import '../../widgets/tool_picker.dart';
 import '../../providers/video_provider.dart';
 import '../../services/chat_service.dart';
 import '../../services/library_service.dart';
 import '../../services/media_tools.dart';
+import '../../services/settings_service.dart';
 import '../../services/subscription_service.dart';
 import '../../widgets/common.dart';
 
@@ -25,6 +29,7 @@ class VideoPage extends StatefulWidget {
 
 class _VideoPageState extends State<VideoPage> {
   final _prompt = TextEditingController();
+  late VideoTool _tool = VideoTool.byId(context.read<SettingsService>().videoToolId);
   int _mode = 0; // 0 = text to video (AI), 1 = animate a photo (free, on device)
   int _seconds = 5;
   bool _busy = false;
@@ -42,31 +47,40 @@ class _VideoPageState extends State<VideoPage> {
     final library = context.read<LibraryService>();
     FocusScope.of(context).unfocus();
     try {
-      subs.ensure(Usage.video);
+      final tool = _tool.available(video.settings) ? _tool : VideoTool.all.first;
+      var points = tool.points;
+      subs.ensure(Usage.video, points: points);
       setState(() {
         _busy = true;
         _status = 'أفهم فكرتك…';
       });
       final english = await chat.englishPrompt(text);
-      Creation saved;
-      if (video.hasRealProvider) {
-        setState(() => _status = 'أصنع الفيديو… قد يأخذ دقيقة أو أكثر');
-        final out = await video.generate(english, seconds: _seconds);
-        final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
-        saved = await library.save(Uint8List.fromList(bytes), CreationKind.video, text);
-      } else {
+      Creation? saved;
+      if (tool.backend != null) {
+        setState(() => _status = 'أصنع الفيديو بـ ${tool.label}… قد يأخذ دقيقة أو أكثر');
+        try {
+          final out = await video.generate(english, seconds: _seconds, backend: tool.backend);
+          final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
+          saved = await library.save(Uint8List.fromList(bytes), CreationKind.video, text);
+        } on AiException catch (e) {
+          // A busy or unpaid provider should not leave the user with nothing.
+          if (mounted) showError(context, '${e.message}\nأجهز لك نسخة مجانية بدلاً منه…');
+          points = VideoTool.all.first.points;
+        }
+      }
+      if (saved == null) {
         // Free path, no key needed: an AI keyframe plus a cinematic camera move on the phone.
         setState(() => _status = 'أرسم المشهد… 🎨');
         final frame = await images.generate(
           '$english, cinematic film still, dramatic lighting, wide shot, highly detailed',
-          width: 1344,
-          height: 768,
+          width: 1024,
+          height: 576,
         );
         setState(() => _status = 'أحرّك الكاميرا… 🎬');
         final gif = await MediaTools.kenBurns(frame.bytes, seconds: _seconds);
         saved = await library.save(gif, CreationKind.video, text, ext: 'gif');
       }
-      await subs.consume(Usage.video);
+      await subs.consume(Usage.video, points: points);
       await _show(saved);
     } catch (e) {
       if (mounted) showError(context, e);
@@ -79,9 +93,28 @@ class _VideoPageState extends State<VideoPage> {
     final x = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280);
     if (x == null || !mounted) return;
     final library = context.read<LibraryService>();
+    final video = context.read<VideoProvider>();
+    final chat = context.read<ChatService>();
+    final subs = context.read<SubscriptionService>();
+    final idea = _prompt.text.trim();
     setState(() => _busy = true);
     try {
-      final gif = await MediaTools.kenBurns(await x.readAsBytes(), seconds: _seconds);
+      final photo = await x.readAsBytes();
+      final tool = _tool;
+      if (_animatesPhotos(tool) && tool.available(video.settings)) {
+        // The model animates the photo itself, following the description if one is written.
+        subs.ensure(Usage.video, points: tool.points);
+        setState(() => _status = 'أحرّك صورتك بـ ${tool.label}… قد يأخذ دقيقة');
+        final english = idea.isEmpty ? 'natural lively motion, cinematic' : await chat.englishPrompt(idea);
+        final out = await video.generate(english, seconds: _seconds, image: photo, backend: tool.backend);
+        final bytes = out.bytes ?? await http.readBytes(Uri.parse(out.url!));
+        await subs.consume(Usage.video, points: tool.points);
+        await _show(
+          await library.save(Uint8List.fromList(bytes), CreationKind.video, idea.isEmpty ? 'صورة متحركة' : idea),
+        );
+        return;
+      }
+      final gif = await MediaTools.kenBurns(photo, seconds: _seconds);
       final saved = await library.save(gif, CreationKind.animatedSticker, 'صورة متحركة', ext: 'gif');
       await _show(saved);
     } catch (e) {
@@ -89,6 +122,34 @@ class _VideoPageState extends State<VideoPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  static bool _animatesPhotos(VideoTool t) =>
+      t.backend == VideoBackend.seedance || t.backend == VideoBackend.huggingface;
+
+  Widget _picker(BuildContext context) {
+    final settings = context.read<SettingsService>();
+    return ToolPicker(
+      selected: _tool.id,
+      onSelected: (id) {
+        setState(() => _tool = VideoTool.byId(id));
+        settings.setVideoToolId(id);
+      },
+      choices: [
+        for (final t in VideoTool.all)
+          if ((_mode == 0 || t.backend == null || _animatesPhotos(t)) &&
+              (t.backend != VideoBackend.custom || t.available(settings)))
+            ToolChoice(
+              id: t.id,
+              label: t.label,
+              emoji: t.emoji,
+              points: _mode == 1 && t.backend == null ? 0 : t.points,
+              note: _mode == 1 && t.backend == null ? 'مجاني: تقريب وحركة كاميرا' : t.note,
+              needs: t.needs,
+              available: t.available(settings),
+            ),
+      ],
+    );
   }
 
   Future<void> _show(Creation c) async {
@@ -126,6 +187,11 @@ class _VideoPageState extends State<VideoPage> {
             onSelectionChanged: (s) => setState(() => _mode = s.first),
           ),
           const SizedBox(height: 16),
+          const SizedBox(height: 12),
+          const Text('أداة الفيديو', style: TextStyle(fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          _picker(context),
+          const SizedBox(height: 4),
           if (_mode == 0) ...[
             const Align(alignment: AlignmentDirectional.centerEnd, child: QuotaPill(Usage.video)),
             const SizedBox(height: 8),
@@ -133,7 +199,9 @@ class _VideoPageState extends State<VideoPage> {
               controller: _prompt,
               minLines: 3,
               maxLines: 6,
-              decoration: const InputDecoration(hintText: 'مثال: سيارة رياضية حمراء تسير على طريق صحراوي وقت الغروب، تصوير سينمائي'),
+              decoration: const InputDecoration(
+                hintText: 'مثال: سيارة رياضية حمراء تسير على طريق صحراوي وقت الغروب، تصوير سينمائي',
+              ),
             ),
             const SizedBox(height: 12),
             Row(
@@ -160,9 +228,11 @@ class _VideoPageState extends State<VideoPage> {
               onPressed: _fromText,
             ),
             const SizedBox(height: 10),
-            _ModeNote(real: context.read<VideoProvider>().hasRealProvider),
+            _ModeNote(real: _tool.backend != null && _tool.available(context.read<SettingsService>())),
           ] else ...[
-            const Text('اختر صورة وسنحوّلها لمقطع متحرك بتقريب وحركة كاميرا سينمائية، على جوالك مباشرة وبدون أي تكلفة.'),
+            const Text(
+              'اختر صورة وسنحوّلها لمقطع متحرك بتقريب وحركة كاميرا سينمائية، على جوالك مباشرة وبدون أي تكلفة.',
+            ),
             const SizedBox(height: 16),
             GradientButton(
               label: 'اختر صورة',
@@ -221,24 +291,21 @@ class _ModeNote extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: MindColors.mint.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(14),
+    padding: const EdgeInsets.all(12),
+    decoration: BoxDecoration(color: MindColors.mint.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(14)),
+    child: Row(
+      children: [
+        Text(real ? '🎥' : '✨', style: const TextStyle(fontSize: 20)),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            real
+                ? 'فيديو ذكاء اصطناعي حقيقي من المزوّد اللي اخترته.'
+                : 'مجاني: نرسم مشهدك بالذكاء الاصطناعي ونحرّك الكاميرا عليه بشكل سينمائي.',
+            style: const TextStyle(fontSize: 13),
+          ),
         ),
-        child: Row(
-          children: [
-            Text(real ? '🎥' : '✨', style: const TextStyle(fontSize: 20)),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                real
-                    ? 'فيديو ذكاء اصطناعي حقيقي من المزوّد اللي اخترته.'
-                    : 'مجاني: نرسم مشهدك بالذكاء الاصطناعي ونحرّك الكاميرا عليه بشكل سينمائي.',
-                style: const TextStyle(fontSize: 13),
-              ),
-            ),
-          ],
-        ),
-      );
+      ],
+    ),
+  );
 }

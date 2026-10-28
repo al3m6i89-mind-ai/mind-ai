@@ -17,7 +17,10 @@ void main() {
 
     for (final m in StickerMotion.values) {
       final gif = await MediaTools.animateSticker(sticker, m);
-      expect(img.decodeGif(gif)!.numFrames, 16, reason: m.name);
+      final decoded = img.decodeGif(gif)!;
+      expect(decoded.numFrames, 16, reason: m.name);
+      // Corners stay see-through instead of turning black.
+      expect(decoded.frames.first.getPixel(1, 1).a, 0, reason: m.name);
     }
     final kb = await MediaTools.kenBurns(img.encodeJpg(src));
     expect(img.decodeGif(kb)!.numFrames, 30);
@@ -36,7 +39,12 @@ void main() {
   });
 
   test('web project is wrapped in a Flutter shell for APK builds', () {
-    final p = CodeProject(id: 'abcdef123', name: 'Todo App', type: ProjectType.web, files: {'index.html': '<h1>hi</h1>'});
+    final p = CodeProject(
+      id: 'abcdef123',
+      name: 'Todo App',
+      type: ProjectType.web,
+      files: {'index.html': '<h1>hi</h1>'},
+    );
     final tree = BuildService.buildTree(p);
     expect(tree['assets/www/index.html'], '<h1>hi</h1>');
     expect(tree['pubspec.yaml'], contains('name: todo_app'));

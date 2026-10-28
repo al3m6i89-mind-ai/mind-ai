@@ -20,16 +20,110 @@ class SettingsScreen extends StatelessWidget {
         children: [
           _Section('عام', [
             _Field(label: 'اسمك', value: s.userName, onSaved: s.setUserName),
-            SwitchListTile(
-              title: const Text('الوضع الليلي'),
-              value: s.darkMode,
-              onChanged: s.setDarkMode,
-            ),
+            SwitchListTile(title: const Text('الوضع الليلي'), value: s.darkMode, onChanged: s.setDarkMode),
             ListTile(
               leading: const Icon(Icons.workspace_premium, color: MindColors.orange),
               title: const Text('الاشتراكات'),
               trailing: const Icon(Icons.arrow_back_ios_new, size: 14),
               onTap: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const PaywallScreen())),
+            ),
+          ]),
+          _Section('🆓 مفاتيح مجانية (ننصح فيها)', [
+            const Text(
+              'كلها مجانية وبدون بطاقة. اضغط 🔗 جنب الخانة، سجّل دخول، انسخ المفتاح والصقه هنا. '
+              'التطبيق يستخدم أقوى مفتاح عندك تلقائياً.',
+              style: TextStyle(height: 1.5, color: MindColors.muted),
+            ),
+            const SizedBox(height: 10),
+            _Field(
+              label: 'Gemini: محادثة، رؤية، تعديل صور، صوت',
+              value: s.textKey(TextBackend.gemini),
+              secret: true,
+              link: 'https://aistudio.google.com/apikey',
+              onSaved: (v) => s.setTextKey(TextBackend.gemini, v),
+            ),
+            _Field(
+              label: 'Hugging Face: صور FLUX وفيديو',
+              value: s.hfToken,
+              secret: true,
+              link: 'https://huggingface.co/settings/tokens',
+              onSaved: s.setHfToken,
+            ),
+            _Field(
+              label: 'Cloudflare: رقم الحساب (Account ID)',
+              value: s.cfAccountId,
+              ltr: true,
+              link: 'https://dash.cloudflare.com/?to=/:account/ai/workers-ai',
+              onSaved: s.setCfAccountId,
+            ),
+            _Field(
+              label: 'Cloudflare: رمز Workers AI',
+              value: s.cfToken,
+              secret: true,
+              link: 'https://dash.cloudflare.com/profile/api-tokens',
+              onSaved: s.setCfToken,
+            ),
+            _Field(
+              label: 'Groq: محادثة سريعة جداً',
+              value: s.textKey(TextBackend.groq),
+              secret: true,
+              link: 'https://console.groq.com/keys',
+              onSaved: (v) => s.setTextKey(TextBackend.groq, v),
+            ),
+            _Field(
+              label: 'OpenRouter: موديلات مجانية متعددة',
+              value: s.textKey(TextBackend.openrouter),
+              secret: true,
+              link: 'https://openrouter.ai/keys',
+              onSaved: (v) => s.setTextKey(TextBackend.openrouter, v),
+            ),
+          ]),
+          _Section('💎 مفاتيح مدفوعة (الأقوى)', [
+            const Text(
+              'تدفع حسب استخدامك من حسابك عند كل شركة. Claude هو الأقوى في بناء التطبيقات.',
+              style: TextStyle(height: 1.5, color: MindColors.muted),
+            ),
+            const SizedBox(height: 10),
+            _Field(
+              label: 'Claude (Anthropic)',
+              value: s.textKey(TextBackend.anthropic),
+              secret: true,
+              link: 'https://platform.claude.com/settings/keys',
+              onSaved: (v) => s.setTextKey(TextBackend.anthropic, v),
+            ),
+            _Field(
+              label: 'ChatGPT (OpenAI)',
+              value: s.textKey(TextBackend.openai),
+              secret: true,
+              link: 'https://platform.openai.com/api-keys',
+              onSaved: (v) => s.setTextKey(TextBackend.openai, v),
+            ),
+            _Field(
+              label: 'BytePlus ModelArk: Seedream للصور وSeedance للفيديو',
+              value: s.arkKey,
+              secret: true,
+              link: 'https://console.byteplus.com/ark/region:ark+ap-southeast-1/apiKey',
+              onSaved: s.setArkKey,
+            ),
+            ExpansionTile(
+              tilePadding: EdgeInsets.zero,
+              title: const Text('أسماء الموديلات (متقدم)', style: TextStyle(fontWeight: FontWeight.w700)),
+              children: [
+                _Field(
+                  label: 'موديل Seedream (Model ID أو ep-…)',
+                  value: s.seedreamModel,
+                  ltr: true,
+                  onSaved: s.setSeedreamModel,
+                ),
+                _Field(
+                  label: 'موديل Seedance (Model ID أو ep-…)',
+                  value: s.seedanceModel,
+                  ltr: true,
+                  onSaved: s.setSeedanceModel,
+                ),
+                _Field(label: 'موديل صور Hugging Face', value: s.hfImageModel, ltr: true, onSaved: s.setHfImageModel),
+                _Field(label: 'موديل فيديو Hugging Face', value: s.hfVideoModel, ltr: true, onSaved: s.setHfVideoModel),
+              ],
             ),
           ]),
           _Section('🧠 نموذج المحادثة والأكواد', [
@@ -64,7 +158,6 @@ class SettingsScreen extends StatelessWidget {
                 onSaved: (v) => s.setTextBaseUrl(tb, v),
               ),
             _Links(const [
-              ('مفتاح Gemini مجاني', 'https://aistudio.google.com/apikey'),
               ('مفتاح Groq مجاني', 'https://console.groq.com/keys'),
               ('مفتاح OpenRouter', 'https://openrouter.ai/keys'),
             ]),
@@ -79,7 +172,12 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             if (s.imageBackend == ImageBackend.pollinations)
-              _Field(label: 'نموذج Pollinations (flux, turbo, kontext…)', value: s.imageModel, ltr: true, onSaved: s.setImageModel),
+              _Field(
+                label: 'نموذج Pollinations (flux, turbo, kontext…)',
+                value: s.imageModel,
+                ltr: true,
+                onSaved: s.setImageModel,
+              ),
             if (s.imageBackend == ImageBackend.gemini && s.textKey(TextBackend.gemini).isEmpty)
               _Field(
                 label: 'مفتاح Gemini',
@@ -113,10 +211,20 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 10),
             if (s.videoBackend == VideoBackend.replicate) ...[
               _Field(label: 'مفتاح Replicate', value: s.replicateKey, secret: true, onSaved: s.setReplicateKey),
-              _Field(label: 'نموذج الفيديو', value: s.replicateVideoModel, ltr: true, onSaved: s.setReplicateVideoModel),
+              _Field(
+                label: 'نموذج الفيديو',
+                value: s.replicateVideoModel,
+                ltr: true,
+                onSaved: s.setReplicateVideoModel,
+              ),
             ],
             if (s.videoBackend == VideoBackend.custom)
-              _Field(label: 'رابط مخصص ({prompt} {seconds})', value: s.customVideoUrl, ltr: true, onSaved: s.setCustomVideoUrl),
+              _Field(
+                label: 'رابط مخصص ({prompt} {seconds})',
+                value: s.customVideoUrl,
+                ltr: true,
+                onSaved: s.setCustomVideoUrl,
+              ),
           ]),
           _Section('☁️ البناء السحابي (بديل Android Studio)', [
             const Text(
@@ -131,7 +239,9 @@ class SettingsScreen extends StatelessWidget {
             _Links(const [('إنشاء رمز GitHub', 'https://github.com/settings/personal-access-tokens/new')]),
           ]),
           const SizedBox(height: 20),
-          const Center(child: Text('Mind Ai · v1.0.0', style: TextStyle(color: MindColors.muted))),
+          const Center(
+            child: Text('Mind Ai · v1.0.0', style: TextStyle(color: MindColors.muted)),
+          ),
         ],
       ),
     );
@@ -145,29 +255,40 @@ class _Section extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Card(
-        margin: const EdgeInsets.only(bottom: 14),
-        child: Padding(
-          padding: const EdgeInsets.all(14),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
-              const SizedBox(height: 10),
-              ...children,
-            ],
-          ),
-        ),
-      );
+    margin: const EdgeInsets.only(bottom: 14),
+    child: Padding(
+      padding: const EdgeInsets.all(14),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text(title, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
+          const SizedBox(height: 10),
+          ...children,
+        ],
+      ),
+    ),
+  );
 }
 
 /// A text field that saves when editing finishes.
 class _Field extends StatefulWidget {
-  const _Field({super.key, required this.label, required this.value, required this.onSaved, this.secret = false, this.ltr = false});
+  const _Field({
+    super.key,
+    required this.label,
+    required this.value,
+    required this.onSaved,
+    this.secret = false,
+    this.ltr = false,
+    this.link,
+  });
   final String label;
   final String value;
   final Future<void> Function(String) onSaved;
   final bool secret;
   final bool ltr;
+
+  /// Page where the user gets this key; shown as a 🔗 button.
+  final String? link;
 
   @override
   State<_Field> createState() => _FieldState();
@@ -184,29 +305,62 @@ class _FieldState extends State<_Field> {
   }
 
   @override
-  Widget build(BuildContext context) => Padding(
-        padding: const EdgeInsets.only(bottom: 10),
-        child: Focus(
-          onFocusChange: (f) {
-            if (!f && _c.text != widget.value) widget.onSaved(_c.text);
-          },
-          child: TextField(
-            controller: _c,
-            obscureText: widget.secret && _hidden,
-            textDirection: widget.ltr || widget.secret ? TextDirection.ltr : null,
-            onSubmitted: widget.onSaved,
-            decoration: InputDecoration(
-              labelText: widget.label,
-              suffixIcon: widget.secret
-                  ? IconButton(
-                      icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
-                      onPressed: () => setState(() => _hidden = !_hidden),
-                    )
-                  : null,
+  Widget build(BuildContext context) {
+    final link = widget.link;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Focus(
+            onFocusChange: (f) {
+              if (!f && _c.text != widget.value) widget.onSaved(_c.text);
+            },
+            child: TextField(
+              controller: _c,
+              obscureText: widget.secret && _hidden,
+              textDirection: widget.ltr || widget.secret ? TextDirection.ltr : null,
+              onSubmitted: widget.onSaved,
+              decoration: InputDecoration(
+                labelText: widget.label,
+                suffixIcon: widget.secret
+                    ? IconButton(
+                        icon: Icon(_hidden ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                        onPressed: () => setState(() => _hidden = !_hidden),
+                      )
+                    : null,
+              ),
             ),
           ),
-        ),
-      );
+          if (link != null)
+            InkWell(
+              onTap: () => launchUrl(Uri.parse(link), mode: LaunchMode.externalApplication),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(6, 4, 6, 0),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.link_rounded, size: 14, color: MindColors.violet),
+                    const SizedBox(width: 4),
+                    Text(
+                      'المفتاح من: ${_short(link)}',
+                      style: const TextStyle(fontSize: 12, color: MindColors.violet, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  /// "https://aistudio.google.com/apikey" -> "aistudio.google.com/apikey".
+  static String _short(String url) {
+    final u = Uri.parse(url);
+    final path = u.path.length > 1 && u.path.length < 22 ? u.path : '';
+    return '${u.host.replaceFirst('www.', '')}$path';
+  }
 }
 
 class _Links extends StatelessWidget {
@@ -215,14 +369,14 @@ class _Links extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Wrap(
-        spacing: 8,
-        children: [
-          for (final (label, url) in links)
-            ActionChip(
-              avatar: const Icon(Icons.open_in_new, size: 16),
-              label: Text(label),
-              onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-            ),
-        ],
-      );
+    spacing: 8,
+    children: [
+      for (final (label, url) in links)
+        ActionChip(
+          avatar: const Icon(Icons.open_in_new, size: 16),
+          label: Text(label),
+          onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+        ),
+    ],
+  );
 }

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:in_app_purchase/in_app_purchase.dart';
@@ -9,13 +10,23 @@ enum Usage { chat, image, sticker, video, codeAgent, apkBuild }
 
 extension UsageInfo on Usage {
   String get label => switch (this) {
-        Usage.chat => 'رسائل المحادثة',
-        Usage.image => 'الصور',
-        Usage.sticker => 'الملصقات',
-        Usage.video => 'الفيديوهات',
-        Usage.codeAgent => 'طلبات وكيل الأكواد',
-        Usage.apkBuild => 'بناء APK',
-      };
+    Usage.chat => 'رسائل المحادثة',
+    Usage.image => 'الصور',
+    Usage.sticker => 'الملصقات',
+    Usage.video => 'الفيديوهات',
+    Usage.codeAgent => 'طلبات وكيل الأكواد',
+    Usage.apkBuild => 'بناء APK',
+  };
+
+  /// Price in points when the screen does not pick a specific tool.
+  int get defaultPoints => switch (this) {
+    Usage.chat => 0,
+    Usage.image => 1,
+    Usage.sticker => 2,
+    Usage.video => 5,
+    Usage.codeAgent => 3,
+    Usage.apkBuild => 5,
+  };
 }
 
 /// A subscription tier. Edit [Plan.all] to change prices, names or limits;
@@ -27,6 +38,7 @@ class Plan {
     required this.price,
     required this.productId,
     required this.limits,
+    required this.points,
     required this.perks,
     this.highlight = false,
   });
@@ -42,6 +54,9 @@ class Plan {
 
   /// Daily limits. -1 means unlimited.
   final Map<Usage, int> limits;
+
+  /// Points granted every month. Each tool costs points (see providers/tools.dart).
+  final int points;
   final List<String> perks;
   final bool highlight;
 
@@ -58,7 +73,8 @@ class Plan {
       Usage.codeAgent: 15,
       Usage.apkBuild: 2,
     },
-    perks: ['محادثة ذكية', '15 صورة وملصق يومياً', 'ملصقات متحركة', 'بناء APK مرتين يومياً'],
+    points: 150,
+    perks: ['150 نقطة شهرياً', 'محادثة ذكية', 'حتى 15 صورة وملصق يومياً', 'فيديوهين يومياً', 'بناء APK مرتين يومياً'],
   );
 
   static const pro = Plan(
@@ -74,7 +90,15 @@ class Plan {
       Usage.codeAgent: 300,
       Usage.apkBuild: 20,
     },
-    perks: ['200 صورة وملصق يومياً', '20 فيديو يومياً', 'وكيل أكواد متقدم', '20 بناء APK يومياً', 'بدون إعلانات'],
+    points: 3000,
+    perks: [
+      '3000 نقطة شهرياً',
+      '200 صورة وملصق يومياً',
+      '20 فيديو يومياً',
+      'وكيل أكواد متقدم',
+      '20 بناء APK يومياً',
+      'بدون إعلانات',
+    ],
     highlight: true,
   );
 
@@ -91,7 +115,8 @@ class Plan {
       Usage.codeAgent: -1,
       Usage.apkBuild: -1,
     },
-    perks: ['كل شيء بلا حدود تقريباً', '100 فيديو يومياً', 'أولوية في السرعة', 'دعم مباشر'],
+    points: 10000,
+    perks: ['10000 نقطة شهرياً', 'كل شيء بلا حدود تقريباً', '100 فيديو يومياً', 'أولوية في السرعة', 'دعم مباشر'],
   );
 
   static const all = [free, pro, max];
@@ -105,6 +130,14 @@ class QuotaExceeded implements Exception {
   final int limit;
   @override
   String toString() => 'وصلت للحد اليومي من ${usage.label} ($limit). رقِّ اشتراكك للمزيد.';
+}
+
+class NotEnoughPoints implements Exception {
+  NotEnoughPoints(this.need, this.left);
+  final int need;
+  final int left;
+  @override
+  String toString() => 'هذي الأداة تحتاج $need نقطة وباقي عندك $left. رقِّ اشتراكك أو اختر أداة أرخص.';
 }
 
 class SubscriptionService extends ChangeNotifier {
@@ -129,14 +162,26 @@ class SubscriptionService extends ChangeNotifier {
 
   int remaining(Usage u) => limit(u) < 0 ? 1 << 30 : (limit(u) - used(u)).clamp(0, 1 << 30);
 
-  /// Call before an action. Throws [QuotaExceeded] when the daily limit is hit.
-  void ensure(Usage u) {
-    final l = limit(u);
-    if (l >= 0 && used(u) >= l) throw QuotaExceeded(u, l);
+  String get _month {
+    final d = DateTime.now();
+    return '${d.year}-${d.month}';
   }
 
-  Future<void> consume(Usage u, [int n = 1]) async {
-    await _prefs.setInt('use_${_today}_${u.name}', used(u) + n);
+  int get pointsUsed => _prefs.getInt('pts_$_month') ?? 0;
+  int get pointsLeft => max(0, plan.points - pointsUsed);
+
+  /// Call before an action. Throws [QuotaExceeded] when the daily limit is hit,
+  /// or [NotEnoughPoints] when the month's points can't pay for it.
+  void ensure(Usage u, {int? points}) {
+    final l = limit(u);
+    if (l >= 0 && used(u) >= l) throw QuotaExceeded(u, l);
+    final cost = points ?? u.defaultPoints;
+    if (cost > pointsLeft) throw NotEnoughPoints(cost, pointsLeft);
+  }
+
+  Future<void> consume(Usage u, {int? points}) async {
+    await _prefs.setInt('use_${_today}_${u.name}', used(u) + 1);
+    await _prefs.setInt('pts_$_month', pointsUsed + (points ?? u.defaultPoints));
     notifyListeners();
   }
 

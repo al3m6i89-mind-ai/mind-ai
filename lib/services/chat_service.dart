@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 
 import '../providers/ai_models.dart';
 import '../providers/image_gen.dart';
+import '../providers/tools.dart';
 import '../providers/text_provider.dart';
 import 'library_service.dart';
 import 'media_tools.dart';
@@ -26,16 +27,35 @@ class Persona {
 
   static const all = [
     Persona('mind', 'Mind Ai', '🧠', 'مساعدك لكل شيء', _base),
-    Persona('coder', 'المبرمج', '👨‍💻', 'يكتب ويشرح ويصلح الأكواد',
-        '$_base أنت خبير برمجة (Flutter, Kotlin, Python, JavaScript, Web). اكتب أكواداً كاملة قابلة للتشغيل داخل كتل ``` مع اسم اللغة، واشرح باختصار.'),
-    Persona('artist', 'الفنان', '🎨', 'يحوّل أفكارك لأوصاف صور مذهلة',
-        '$_base أنت فنان ومهندس أوامر صور. ساعد المستخدم في كتابة أوصاف (prompts) احترافية بالإنجليزية للصور والفيديو والملصقات.'),
-    Persona('writer', 'الكاتب', '✍️', 'مقالات، منشورات، قصص',
-        '$_base أنت كاتب محتوى محترف ومبدع للتسويق ووسائل التواصل والقصص.'),
-    Persona('tutor', 'المعلّم', '📚', 'يشرح أي درس بسهولة',
-        '$_base أنت معلم صبور يشرح خطوة بخطوة مع أمثلة.'),
-    Persona('translator', 'المترجم', '🌍', 'ترجمة دقيقة لأي لغة',
-        '$_base أنت مترجم محترف. ترجم بدقة وحافظ على المعنى والأسلوب.'),
+    Persona(
+      'coder',
+      'المبرمج',
+      '👨‍💻',
+      'يكتب ويشرح ويصلح الأكواد',
+      '$_base أنت خبير برمجة (Flutter, Kotlin, Python, JavaScript, Web). اكتب أكواداً كاملة قابلة للتشغيل داخل كتل ``` مع اسم اللغة، واشرح باختصار.',
+    ),
+    Persona(
+      'artist',
+      'الفنان',
+      '🎨',
+      'يحوّل أفكارك لأوصاف صور مذهلة',
+      '$_base أنت فنان ومهندس أوامر صور. ساعد المستخدم في كتابة أوصاف (prompts) احترافية بالإنجليزية للصور والفيديو والملصقات.',
+    ),
+    Persona(
+      'writer',
+      'الكاتب',
+      '✍️',
+      'مقالات، منشورات، قصص',
+      '$_base أنت كاتب محتوى محترف ومبدع للتسويق ووسائل التواصل والقصص.',
+    ),
+    Persona('tutor', 'المعلّم', '📚', 'يشرح أي درس بسهولة', '$_base أنت معلم صبور يشرح خطوة بخطوة مع أمثلة.'),
+    Persona(
+      'translator',
+      'المترجم',
+      '🌍',
+      'ترجمة دقيقة لأي لغة',
+      '$_base أنت مترجم محترف. ترجم بدقة وحافظ على المعنى والأسلوب.',
+    ),
   ];
 
   static Persona byId(String id) => all.firstWhere((p) => p.id == id, orElse: () => all.first);
@@ -43,7 +63,7 @@ class Persona {
 
 class Conversation {
   Conversation({required this.id, required this.personaId, required this.title, List<ChatMessage>? messages})
-      : messages = messages ?? [];
+    : messages = messages ?? [];
 
   final String id;
   final String personaId;
@@ -51,29 +71,25 @@ class Conversation {
   final List<ChatMessage> messages;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'personaId': personaId,
-        'title': title,
-        'messages': messages.map((m) => m.toJson()).toList(),
-      };
+    'id': id,
+    'personaId': personaId,
+    'title': title,
+    'messages': messages.map((m) => m.toJson()).toList(),
+  };
 
   factory Conversation.fromJson(Map<String, dynamic> j) => Conversation(
-        id: j['id'] as String,
-        personaId: j['personaId'] as String? ?? 'mind',
-        title: j['title'] as String? ?? '',
-        messages: (j['messages'] as List? ?? [])
-            .map((e) => ChatMessage.fromJson(e as Map<String, dynamic>))
-            .toList(),
-      );
+    id: j['id'] as String,
+    personaId: j['personaId'] as String? ?? 'mind',
+    title: j['title'] as String? ?? '',
+    messages: (j['messages'] as List? ?? []).map((e) => ChatMessage.fromJson(e as Map<String, dynamic>)).toList(),
+  );
 }
 
 class ChatService extends ChangeNotifier {
   ChatService(this._prefs, this._text, this._images, this._subs, this._library, this._settings) {
     final raw = _prefs.getString('conversations');
     if (raw != null) {
-      conversations.addAll(
-        (jsonDecode(raw) as List).map((e) => Conversation.fromJson(e as Map<String, dynamic>)),
-      );
+      conversations.addAll((jsonDecode(raw) as List).map((e) => Conversation.fromJson(e as Map<String, dynamic>)));
     }
   }
 
@@ -109,7 +125,10 @@ class ChatService extends ChangeNotifier {
     caseSensitive: false,
   );
 
-  static final _drawIntent = RegExp(r'^(ارسم|ارسملي|صمم|صمّم|أنشئ صورة|انشئ صورة|سوي صورة|draw|/image)\s*', caseSensitive: false);
+  static final _drawIntent = RegExp(
+    r'^(ارسم|ارسملي|صمم|صمّم|أنشئ صورة|انشئ صورة|سوي صورة|draw|/image)\s*',
+    caseSensitive: false,
+  );
 
   Future<void> send(Conversation c, String text, {Uint8List? image}) async {
     if (busy) return;
@@ -128,6 +147,7 @@ class ChatService extends ChangeNotifier {
     try {
       final draw = _drawIntent.firstMatch(trimmed);
       final hasGemini = _settings.textKey(TextBackend.gemini).isNotEmpty;
+      final vision = _visionBackend;
       if (image != null && (_bgIntent.hasMatch(trimmed))) {
         // Background removal runs on the phone: free, offline and instant.
         _subs.ensure(Usage.sticker);
@@ -136,25 +156,32 @@ class ChatService extends ChangeNotifier {
         final png = await MediaTools.removeBackground(image);
         final saved = await _library.save(png, CreationKind.sticker, trimmed, ext: 'png');
         await _subs.consume(Usage.sticker);
-        _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تم حذف الخلفية ✅ اضغط على الصورة لمشاركتها.', imageUrl: saved.path));
-      } else if (image != null && _editIntent.hasMatch(trimmed) && hasGemini) {
-        _subs.ensure(Usage.image);
+        _replace(
+          c,
+          reply,
+          ChatMessage(role: Role.assistant, text: 'تم حذف الخلفية ✅ اضغط على الصورة لمشاركتها.', imageUrl: saved.path),
+        );
+      } else if (image != null && _editIntent.hasMatch(trimmed) && (hasGemini || _settings.arkKey.isNotEmpty)) {
+        _subs.ensure(Usage.image, points: 3);
         reply.text = '🪄 أعدّل صورتك…';
         notifyListeners();
         final en = await _toEnglishPrompt(trimmed);
         final out = await _images.generate('Edit this photo: $en', reference: image);
         final saved = await _library.save(out.bytes, CreationKind.image, trimmed);
-        await _subs.consume(Usage.image);
+        await _subs.consume(Usage.image, points: 3);
         _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تفضل! 🪄', imageUrl: saved.path));
       } else if (draw != null && image == null) {
-        _subs.ensure(Usage.image);
-        reply.text = '🎨 جاري الرسم…';
+        // Draw with the tool picked last in the studio, when it is still unlocked.
+        final picked = ImageTool.byId(_settings.imageToolId);
+        final tool = picked.available(_settings) ? picked : ImageTool.all.first;
+        _subs.ensure(Usage.image, points: tool.points);
+        reply.text = '🎨 جاري الرسم بـ ${tool.label}…';
         notifyListeners();
         final prompt = trimmed.substring(draw.end);
         final enPrompt = await _toEnglishPrompt(prompt);
-        final out = await _images.generate(enPrompt);
+        final out = await _images.generate(enPrompt, backend: tool.backend, model: tool.model);
         final saved = await _library.save(out.bytes, CreationKind.image, prompt);
-        await _subs.consume(Usage.image);
+        await _subs.consume(Usage.image, points: tool.points);
         _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تفضل! 🎨 «$prompt»', imageUrl: saved.path));
       } else {
         _subs.ensure(Usage.chat);
@@ -167,8 +194,8 @@ class ChatService extends ChangeNotifier {
           for (final m in window)
             identical(m, window.last) ? m : ChatMessage(role: m.role, text: m.text.isEmpty ? '[صورة]' : m.text),
         ];
-        // Pictures need a vision model: Gemini when a key exists.
-        final backend = image != null && hasGemini ? TextBackend.gemini : null;
+        // Pictures need a vision model: Claude, ChatGPT or Gemini when a key exists.
+        final backend = image != null ? vision : null;
         try {
           await for (final token in _text.chat(window, system: persona.system, backend: backend)) {
             reply.text += token;
@@ -178,7 +205,10 @@ class ChatService extends ChangeNotifier {
           if (image == null || !e.message.contains('image')) rethrow;
           // The free model can't see pictures: answer from the text and say how to enable vision.
           reply.text = '';
-          final textOnly = [...window.take(window.length - 1), ChatMessage(role: Role.user, text: trimmed.isEmpty ? 'أرسلت صورة' : trimmed)];
+          final textOnly = [
+            ...window.take(window.length - 1),
+            ChatMessage(role: Role.user, text: trimmed.isEmpty ? 'أرسلت صورة' : trimmed),
+          ];
           await for (final token in _text.chat(textOnly, system: persona.system)) {
             reply.text += token;
             notifyListeners();
@@ -202,15 +232,30 @@ class ChatService extends ChangeNotifier {
   }
 
   /// Image models follow English prompts far better, so translate quietly first.
+  /// The chosen backend when it can see pictures, else the strongest keyed one.
+  TextBackend? get _visionBackend {
+    const seeing = [TextBackend.anthropic, TextBackend.openai, TextBackend.gemini, TextBackend.openrouter];
+    if (seeing.contains(_settings.textBackend) && _settings.textKey(_settings.textBackend).isNotEmpty) {
+      return _settings.textBackend;
+    }
+    final best = _settings.bestTextBackend;
+    return _settings.textKey(best).isNotEmpty ? best : null;
+  }
+
   Future<String> _toEnglishPrompt(String prompt) async {
     if (!RegExp(r'[؀-ۿ]').hasMatch(prompt)) return prompt;
     try {
       final out = await _text.complete(
         [ChatMessage(role: Role.user, text: prompt)],
+        backend: _settings.bestTextBackend,
         system:
-            'Translate the user request into one vivid English image-generation prompt. Reply with the prompt only.',
+            'You translate an Arabic image request into an English image-generation prompt. '
+            'Keep EVERY subject, count, color, action, clothing and setting the user asked for, in the same order. '
+            'Do not invent new subjects or change the idea. Add only short quality words at the end. '
+            'Reply with the prompt only, one line, no quotes.',
       );
-      return out.trim().isEmpty ? prompt : out.trim();
+      final line = out.trim().split('\n').firstWhere((l) => l.trim().isNotEmpty, orElse: () => '').trim();
+      return line.isEmpty ? prompt : line.replaceAll(RegExp(r'^["“]+|["”]+$'), '');
     } catch (_) {
       return prompt;
     }

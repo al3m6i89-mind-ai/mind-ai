@@ -3,13 +3,8 @@ import 'dart:typed_data';
 enum Role { system, user, assistant }
 
 class ChatMessage {
-  ChatMessage({
-    required this.role,
-    required this.text,
-    this.imageBytes,
-    this.imageUrl,
-    DateTime? time,
-  }) : time = time ?? DateTime.now();
+  ChatMessage({required this.role, required this.text, this.imageBytes, this.imageUrl, DateTime? time})
+    : time = time ?? DateTime.now();
 
   final Role role;
   String text;
@@ -20,18 +15,18 @@ class ChatMessage {
   final DateTime time;
 
   Map<String, dynamic> toJson() => {
-        'role': role.name,
-        'text': text,
-        if (imageUrl != null) 'imageUrl': imageUrl,
-        'time': time.toIso8601String(),
-      };
+    'role': role.name,
+    'text': text,
+    if (imageUrl != null) 'imageUrl': imageUrl,
+    'time': time.toIso8601String(),
+  };
 
   factory ChatMessage.fromJson(Map<String, dynamic> j) => ChatMessage(
-        role: Role.values.byName(j['role'] as String),
-        text: j['text'] as String? ?? '',
-        imageUrl: j['imageUrl'] as String?,
-        time: DateTime.tryParse(j['time'] as String? ?? ''),
-      );
+    role: Role.values.byName(j['role'] as String),
+    text: j['text'] as String? ?? '',
+    imageUrl: j['imageUrl'] as String?,
+    time: DateTime.tryParse(j['time'] as String? ?? ''),
+  );
 }
 
 class AiException implements Exception {

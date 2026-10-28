@@ -35,7 +35,12 @@ class BuildPanel extends StatelessWidget {
     final b = context.watch<BuildService>();
     final mine = b.projectId == project.id;
     final stage = mine ? b.stage : BuildStage.idle;
-    final running = const [BuildStage.uploading, BuildStage.queued, BuildStage.building, BuildStage.downloading].contains(stage);
+    final running = const [
+      BuildStage.uploading,
+      BuildStage.queued,
+      BuildStage.building,
+      BuildStage.downloading,
+    ].contains(stage);
 
     return ListView(
       padding: const EdgeInsets.all(16),
@@ -46,7 +51,10 @@ class BuildPanel extends StatelessWidget {
           child: const Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('☁️ بديل Android Studio', style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900)),
+              Text(
+                '☁️ بديل Android Studio',
+                style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w900),
+              ),
               SizedBox(height: 6),
               Text(
                 'نرفع مشروعك لمستودعك على GitHub، ويُبنى مجاناً على خوادم GitHub Actions، ثم ينزل ملف APK على جوالك جاهز للتثبيت.',
@@ -72,10 +80,12 @@ class BuildPanel extends StatelessWidget {
             onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const SettingsScreen())),
           ),
         ] else ...[
-          Row(children: [
-            Expanded(child: Text('المستودع: ${settings.githubRepo}', textDirection: TextDirection.ltr)),
-            const QuotaPill(Usage.apkBuild),
-          ]),
+          Row(
+            children: [
+              Expanded(child: Text('المستودع: ${settings.githubRepo}', textDirection: TextDirection.ltr)),
+              const QuotaPill(Usage.apkBuild),
+            ],
+          ),
           const SizedBox(height: 12),
           GradientButton(
             label: running ? stage.label : 'ابنِ APK الآن',
@@ -122,10 +132,7 @@ class BuildPanel extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          GradientButton(
-            label: 'خلّ الوكيل يصلح الخطأ 🛠️',
-            onPressed: () => onFixWithAgent(b.errorLog!),
-          ),
+          GradientButton(label: 'خلّ الوكيل يصلح الخطأ 🛠️', onPressed: () => onFixWithAgent(b.errorLog!)),
         ],
       ],
     );
@@ -138,7 +145,13 @@ class _Steps extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const steps = [BuildStage.uploading, BuildStage.queued, BuildStage.building, BuildStage.downloading, BuildStage.done];
+    const steps = [
+      BuildStage.uploading,
+      BuildStage.queued,
+      BuildStage.building,
+      BuildStage.downloading,
+      BuildStage.done,
+    ];
     final current = stage == BuildStage.failed ? -1 : steps.indexOf(stage);
     return Column(
       children: [
@@ -149,15 +162,15 @@ class _Steps extends StatelessWidget {
               stage == BuildStage.failed
                   ? Icons.error_outline
                   : i < current || stage == BuildStage.done
-                      ? Icons.check_circle
-                      : i == current
-                          ? Icons.autorenew
-                          : Icons.radio_button_unchecked,
+                  ? Icons.check_circle
+                  : i == current
+                  ? Icons.autorenew
+                  : Icons.radio_button_unchecked,
               color: stage == BuildStage.failed
                   ? Colors.red
                   : i <= current
-                      ? MindColors.mint
-                      : MindColors.muted,
+                  ? MindColors.mint
+                  : MindColors.muted,
             ),
             title: Text(steps[i].label),
           ),

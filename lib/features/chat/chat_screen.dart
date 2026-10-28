@@ -25,8 +25,11 @@ class _ChatScreenState extends State<ChatScreen> {
   void _toBottom() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
-        _scroll.animateTo(_scroll.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
       }
     });
   }
@@ -83,19 +86,21 @@ class _Welcome extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Text(persona.emoji, style: const TextStyle(fontSize: 64)),
-            const SizedBox(height: 8),
-            Text(persona.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
-            Text(persona.tagline, style: const TextStyle(color: MindColors.muted)),
-            const SizedBox(height: 12),
-            const Text('💡 اكتب "ارسم" قبل وصفك لإنشاء صورة مباشرة',
-                style: TextStyle(fontSize: 13, color: MindColors.muted)),
-          ],
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(persona.emoji, style: const TextStyle(fontSize: 64)),
+        const SizedBox(height: 8),
+        Text(persona.name, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
+        Text(persona.tagline, style: const TextStyle(color: MindColors.muted)),
+        const SizedBox(height: 12),
+        const Text(
+          '💡 اكتب "ارسم" قبل وصفك لإنشاء صورة مباشرة',
+          style: TextStyle(fontSize: 13, color: MindColors.muted),
         ),
-      );
+      ],
+    ),
+  );
 }
 
 class _Bubble extends StatelessWidget {
@@ -151,6 +156,11 @@ class _Bubble extends StatelessWidget {
               data: message.text,
               selectable: true,
               styleSheet: MarkdownStyleSheet.fromTheme(Theme.of(context)).copyWith(
+                // Intrinsic widths make wide tables scroll sideways instead of
+                // squeezing every column into one letter per line.
+                tableColumnWidth: const IntrinsicColumnWidth(),
+                tableCellsPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                tableBorder: TableBorder.all(color: MindColors.violet.withValues(alpha: 0.25)),
                 code: TextStyle(
                   fontFamily: 'monospace',
                   fontSize: 13,
@@ -197,21 +207,21 @@ class _TypingState extends State<_Typing> with SingleTickerProviderStateMixin {
 
   @override
   Widget build(BuildContext context) => AnimatedBuilder(
-        animation: _c,
-        builder: (_, _) => Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(3, (i) {
-            final t = ((_c.value * 3) - i).clamp(0.0, 1.0);
-            return Container(
-              margin: const EdgeInsets.symmetric(horizontal: 3),
-              width: 8,
-              height: 8,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Color.lerp(MindColors.violet, MindColors.pink, t)!.withValues(alpha: 0.4 + 0.6 * t),
-              ),
-            );
-          }),
-        ),
-      );
+    animation: _c,
+    builder: (_, _) => Row(
+      mainAxisSize: MainAxisSize.min,
+      children: List.generate(3, (i) {
+        final t = ((_c.value * 3) - i).clamp(0.0, 1.0);
+        return Container(
+          margin: const EdgeInsets.symmetric(horizontal: 3),
+          width: 8,
+          height: 8,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: Color.lerp(MindColors.violet, MindColors.pink, t)!.withValues(alpha: 0.4 + 0.6 * t),
+          ),
+        );
+      }),
+    ),
+  );
 }

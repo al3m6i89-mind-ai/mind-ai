@@ -14,14 +14,14 @@ enum BuildStage { idle, uploading, queued, building, downloading, done, failed }
 
 extension BuildStageInfo on BuildStage {
   String get label => switch (this) {
-        BuildStage.idle => 'جاهز',
-        BuildStage.uploading => 'رفع المشروع إلى GitHub…',
-        BuildStage.queued => 'في الطابور…',
-        BuildStage.building => 'جاري البناء في السحابة (3-6 دقائق)…',
-        BuildStage.downloading => 'تنزيل الـ APK…',
-        BuildStage.done => 'تم! الـ APK جاهز',
-        BuildStage.failed => 'فشل البناء',
-      };
+    BuildStage.idle => 'جاهز',
+    BuildStage.uploading => 'رفع المشروع إلى GitHub…',
+    BuildStage.queued => 'في الطابور…',
+    BuildStage.building => 'جاري البناء في السحابة (3-6 دقائق)…',
+    BuildStage.downloading => 'تنزيل الـ APK…',
+    BuildStage.done => 'تم! الـ APK جاهز',
+    BuildStage.failed => 'فشل البناء',
+  };
 }
 
 /// The "Android Studio in the cloud": pushes the project to the user's GitHub
@@ -40,10 +40,10 @@ class BuildService extends ChangeNotifier {
   static const _api = 'https://api.github.com';
 
   Map<String, String> get _h => {
-        'Authorization': 'Bearer ${settings.githubToken}',
-        'Accept': 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28',
-      };
+    'Authorization': 'Bearer ${settings.githubToken}',
+    'Accept': 'application/vnd.github+json',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
 
   String get _repo => settings.githubRepo;
 
@@ -144,7 +144,8 @@ jobs:
           retention-days: 7
 ''';
 
-  static String _webShell(String name) => '''
+  static String _webShell(String name) =>
+      '''
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -285,7 +286,10 @@ class _WebHomeState extends State<WebHome> {
       final loc = res.headers['location'];
       if (loc == null) return 'فشلت خطوة: ${failed?['name'] ?? 'غير معروفة'}';
       final log = await http.read(Uri.parse(loc));
-      final lines = log.split('\n').where((l) => l.contains('Error') || l.contains('error') || l.contains('FAILURE')).toList();
+      final lines = log
+          .split('\n')
+          .where((l) => l.contains('Error') || l.contains('error') || l.contains('FAILURE'))
+          .toList();
       final tail = log.split('\n');
       final picked = lines.isNotEmpty ? lines.take(40) : tail.skip(tail.length > 60 ? tail.length - 60 : 0);
       return 'Failed step: ${failed?['name']}\n${picked.join('\n')}';

@@ -29,6 +29,24 @@ class PaywallScreen extends StatelessWidget {
           const SizedBox(height: 8),
           TextButton(onPressed: subs.restore, child: const Text('استعادة المشتريات')),
           const SizedBox(height: 12),
+          Container(
+            padding: const EdgeInsets.all(14),
+            decoration: BoxDecoration(gradient: MindColors.brand, borderRadius: BorderRadius.circular(18)),
+            child: Row(
+              children: [
+                const Text('💎', style: TextStyle(fontSize: 30)),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Text(
+                    'نقاطك هذا الشهر: ${subs.pointsLeft} من ${subs.plan.points}\n'
+                    'كل أداة لها سعر بالنقاط حسب قوتها، وتتجدد النقاط أول كل شهر.',
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.5),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 14),
           const Text('استخدامك اليوم', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
           const SizedBox(height: 8),
           for (final u in Usage.values)
@@ -96,27 +114,35 @@ class _PlanCard extends StatelessWidget {
                   Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(gradient: MindColors.sunset, borderRadius: BorderRadius.circular(10)),
-                    child: const Text('الأكثر طلباً',
-                        style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800)),
+                    child: const Text(
+                      'الأكثر طلباً',
+                      style: TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+                    ),
                   ),
                 const Spacer(),
-                Text(plan.id == 'free' ? 'مجاناً' : subs.priceOf(plan),
-                    style: const TextStyle(fontWeight: FontWeight.w900, color: MindColors.violet)),
+                Text(
+                  plan.id == 'free' ? 'مجاناً' : subs.priceOf(plan),
+                  style: const TextStyle(fontWeight: FontWeight.w900, color: MindColors.violet),
+                ),
               ],
             ),
             const SizedBox(height: 10),
             for (final perk in plan.perks)
               Padding(
                 padding: const EdgeInsets.only(bottom: 4),
-                child: Row(children: [
-                  const Icon(Icons.check_circle, size: 18, color: MindColors.mint),
-                  const SizedBox(width: 6),
-                  Expanded(child: Text(perk)),
-                ]),
+                child: Row(
+                  children: [
+                    const Icon(Icons.check_circle, size: 18, color: MindColors.mint),
+                    const SizedBox(width: 6),
+                    Expanded(child: Text(perk)),
+                  ],
+                ),
               ),
             const SizedBox(height: 10),
             if (current)
-              const Center(child: Text('✅ باقتك الحالية', style: TextStyle(fontWeight: FontWeight.w800)))
+              const Center(
+                child: Text('✅ باقتك الحالية', style: TextStyle(fontWeight: FontWeight.w800)),
+              )
             else if (plan.id != 'free')
               SizedBox(
                 width: double.infinity,

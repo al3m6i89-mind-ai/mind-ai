@@ -18,23 +18,11 @@ class MindColors {
     end: Alignment.bottomLeft,
   );
 
-  static const cool = LinearGradient(
-    colors: [cyan, violet],
-    begin: Alignment.topRight,
-    end: Alignment.bottomLeft,
-  );
+  static const cool = LinearGradient(colors: [cyan, violet], begin: Alignment.topRight, end: Alignment.bottomLeft);
 
-  static const fresh = LinearGradient(
-    colors: [mint, cyan],
-    begin: Alignment.topRight,
-    end: Alignment.bottomLeft,
-  );
+  static const fresh = LinearGradient(colors: [mint, cyan], begin: Alignment.topRight, end: Alignment.bottomLeft);
 
-  static const sunset = LinearGradient(
-    colors: [orange, pink],
-    begin: Alignment.topRight,
-    end: Alignment.bottomLeft,
-  );
+  static const sunset = LinearGradient(colors: [orange, pink], begin: Alignment.topRight, end: Alignment.bottomLeft);
 }
 
 ThemeData buildTheme(Brightness brightness) {
@@ -57,11 +45,7 @@ ThemeData buildTheme(Brightness brightness) {
       scrolledUnderElevation: 0,
       centerTitle: true,
       foregroundColor: dark ? Colors.white : MindColors.ink,
-      titleTextStyle: TextStyle(
-        fontSize: 18,
-        fontWeight: FontWeight.w800,
-        color: dark ? Colors.white : MindColors.ink,
-      ),
+      titleTextStyle: TextStyle(fontSize: 18, fontWeight: FontWeight.w800, color: dark ? Colors.white : MindColors.ink),
     ),
     cardTheme: CardThemeData(
       color: dark ? const Color(0xFF1E1A2E) : MindColors.card,
@@ -71,10 +55,7 @@ ThemeData buildTheme(Brightness brightness) {
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: dark ? const Color(0xFF1E1A2E) : Colors.white,
-      border: OutlineInputBorder(
-        borderRadius: BorderRadius.circular(18),
-        borderSide: BorderSide.none,
-      ),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(18), borderSide: BorderSide.none),
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
     ),
     filledButtonTheme: FilledButtonThemeData(
@@ -87,9 +68,7 @@ ThemeData buildTheme(Brightness brightness) {
     navigationBarTheme: NavigationBarThemeData(
       backgroundColor: dark ? const Color(0xFF1E1A2E) : Colors.white,
       indicatorColor: MindColors.violet.withValues(alpha: 0.14),
-      labelTextStyle: WidgetStateProperty.all(
-        TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-      ),
+      labelTextStyle: WidgetStateProperty.all(TextStyle(fontSize: 12, fontWeight: FontWeight.w700)),
     ),
   );
 }

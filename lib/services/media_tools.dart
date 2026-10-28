@@ -13,26 +13,26 @@ enum StickerMotion { bounce, wiggle, pulse, spin, float, shake, heartbeat, swing
 
 extension StickerMotionInfo on StickerMotion {
   String get label => switch (this) {
-        StickerMotion.bounce => 'نطّ',
-        StickerMotion.wiggle => 'تمايل',
-        StickerMotion.pulse => 'نبض',
-        StickerMotion.spin => 'دوران',
-        StickerMotion.float => 'طفو',
-        StickerMotion.shake => 'اهتزاز',
-        StickerMotion.heartbeat => 'قلب',
-        StickerMotion.swing => 'أرجحة',
-      };
+    StickerMotion.bounce => 'نطّ',
+    StickerMotion.wiggle => 'تمايل',
+    StickerMotion.pulse => 'نبض',
+    StickerMotion.spin => 'دوران',
+    StickerMotion.float => 'طفو',
+    StickerMotion.shake => 'اهتزاز',
+    StickerMotion.heartbeat => 'قلب',
+    StickerMotion.swing => 'أرجحة',
+  };
 
   String get emoji => switch (this) {
-        StickerMotion.bounce => '🏀',
-        StickerMotion.wiggle => '〰️',
-        StickerMotion.pulse => '💫',
-        StickerMotion.spin => '🌀',
-        StickerMotion.float => '🎈',
-        StickerMotion.shake => '📳',
-        StickerMotion.heartbeat => '💓',
-        StickerMotion.swing => '🎐',
-      };
+    StickerMotion.bounce => '🏀',
+    StickerMotion.wiggle => '〰️',
+    StickerMotion.pulse => '💫',
+    StickerMotion.spin => '🌀',
+    StickerMotion.float => '🎈',
+    StickerMotion.shake => '📳',
+    StickerMotion.heartbeat => '💓',
+    StickerMotion.swing => '🎐',
+  };
 }
 
 class MediaTools {
@@ -49,12 +49,20 @@ class MediaTools {
   /// and busy backgrounds, free, and offline once its model is downloaded. Falls
   /// back to a plain-background flood fill if ML Kit is unavailable.
   static Future<Uint8List> removeBackground(Uint8List source) async {
-    try {
-      return await _mlKitCutout(source);
-    } catch (e) {
-      debugPrint('ML Kit segmentation unavailable, using flood fill: $e');
-      return compute(_cutout, source);
+    Object? last;
+    // Right after install Google Play may still be fetching the model; give it a moment.
+    for (var attempt = 0; attempt < 4; attempt++) {
+      try {
+        return await _mlKitCutout(source);
+      } catch (e) {
+        last = e;
+        final downloading = '$e'.toLowerCase().contains('download') || '$e'.toLowerCase().contains('module');
+        if (!downloading) break;
+        await Future<void>.delayed(Duration(seconds: 3 * (attempt + 1)));
+      }
     }
+    debugPrint('ML Kit segmentation unavailable, using flood fill: $last');
+    return compute(_cutout, source);
   }
 
   static Future<Uint8List> cutout(Uint8List source) => removeBackground(source);
@@ -86,6 +94,10 @@ class MediaTools {
   /// Renders an animated GIF sticker from a still sticker.
   static Future<Uint8List> animateSticker(Uint8List sticker, StickerMotion motion) =>
       compute(_animate, _AnimJob(sticker, motion));
+
+  /// Real character motion: [poses] are cut-out stickers of the same character in
+  /// different poses (made by an AI edit). They play in a loop with a soft bob.
+  static Future<Uint8List> animatePoses(List<Uint8List> poses) => compute(_animatePoses, poses);
 
   /// A free "image to video" fallback: slow zoom-and-pan (Ken Burns) as GIF.
   static Future<Uint8List> kenBurns(Uint8List source, {int seconds = 3}) =>
@@ -148,11 +160,13 @@ Uint8List _makeSticker(_StickerJob job) {
     for (final p in src) {
       if (p.a > 40) mask.setPixelRgba(p.x, p.y, 255, 255, 255, 255);
     }
-    const r = 7;
-    for (var a = 0; a < 360; a += 20) {
-      final ox = (cos(a * pi / 180) * r).round();
-      final oy = (sin(a * pi / 180) * r).round();
-      img.compositeImage(canvas, mask, dstX: dx + ox, dstY: dy + oy);
+    // Several rings at fine angles give a smooth, even edge instead of a jagged one.
+    for (final r in const [3, 6, 8]) {
+      for (var a = 0; a < 360; a += 8) {
+        final ox = (cos(a * pi / 180) * r).round();
+        final oy = (sin(a * pi / 180) * r).round();
+        img.compositeImage(canvas, mask, dstX: dx + ox, dstY: dy + oy);
+      }
     }
   }
   img.compositeImage(canvas, src, dstX: dx, dstY: dy);
@@ -177,8 +191,7 @@ void _floodRemoveBackground(img.Image im) {
   final seed = im.getPixel(0, 0);
   final br = seed.r.toInt(), bg = seed.g.toInt(), bb = seed.b.toInt();
   const tol = 38;
-  bool close(img.Pixel p) =>
-      (p.r - br).abs() < tol && (p.g - bg).abs() < tol && (p.b - bb).abs() < tol;
+  bool close(img.Pixel p) => (p.r - br).abs() < tol && (p.g - bg).abs() < tol && (p.b - bb).abs() < tol;
 
   final visited = Uint8List(w * h);
   final q = Queue<int>();
@@ -213,7 +226,7 @@ Uint8List _animate(_AnimJob job) {
   final sticker = img.copyResize(base.convert(numChannels: 4), width: 320, height: 320);
   const frames = 16;
   const size = 360;
-  final anim = img.Image(width: size, height: size, numChannels: 4);
+  final rendered = <img.Image>[];
 
   for (var f = 0; f < frames; f++) {
     final t = f / frames; // 0..1
@@ -257,17 +270,63 @@ Uint8List _animate(_AnimJob job) {
       dstX: ((size - frame.width) / 2 + ox).round(),
       dstY: ((size - frame.height) / 2 + oy).round(),
     );
-    canvas.frameDuration = 60;
-    if (f == 0) {
-      anim
-        ..frameDuration = 60
-        ..loopCount = 0;
-      img.compositeImage(anim, canvas);
-    } else {
-      anim.addFrame(canvas);
+    rendered.add(canvas);
+  }
+  return _transparentGif(rendered, delayCs: 6);
+}
+
+Uint8List _animatePoses(List<Uint8List> poses) {
+  const size = 360;
+  final stickers = [
+    for (final b in poses)
+      img.copyResize((img.decodePng(b) ?? img.decodeImage(b)!).convert(numChannels: 4), width: 320, height: 320),
+  ];
+  // Ping-pong through the poses: 0 1 2 1 0 1 2 1 ...
+  final order = [for (var i = 0; i < stickers.length; i++) i, for (var i = stickers.length - 2; i > 0; i--) i];
+  final rendered = <img.Image>[];
+  for (var k = 0; k < order.length * 2; k++) {
+    final pose = stickers[order[k % order.length]];
+    for (var hold = 0; hold < 2; hold++) {
+      final t = (k * 2 + hold) / (order.length * 4);
+      final oy = sin(t * 4 * pi) * 6;
+      final canvas = img.Image(width: size, height: size, numChannels: 4);
+      img.fill(canvas, color: img.ColorRgba8(0, 0, 0, 0));
+      img.compositeImage(canvas, pose, dstX: (size - 320) ~/ 2, dstY: ((size - 320) / 2 + oy).round());
+      rendered.add(canvas);
     }
   }
-  return Uint8List.fromList(img.encodeGif(anim, samplingFactor: 4));
+  return _transparentGif(rendered, delayCs: 12, sample: stickers);
+}
+
+/// GIF encoders drop alpha when they quantize, which is why stickers came out on
+/// black. Here one palette is built from the sticker's colors, and index 255 is
+/// reserved as the transparent color for every frame.
+Uint8List _transparentGif(List<img.Image> frames, {required int delayCs, List<img.Image>? sample}) {
+  // The palette is learned from every distinct picture, side by side.
+  final pics = sample ?? [frames.first];
+  final opaque = img.Image(width: pics.first.width * pics.length, height: pics.first.height);
+  img.fill(opaque, color: img.ColorRgb8(255, 255, 255));
+  for (var i = 0; i < pics.length; i++) {
+    img.compositeImage(opaque, pics[i], dstX: i * pics.first.width);
+  }
+  final q = img.NeuralQuantizer(opaque, numberOfColors: 255, samplingFactor: 5);
+  final palette = img.PaletteUint8(256, 4);
+  for (var i = 0; i < 255 && i < q.palette.numColors; i++) {
+    palette.setRgba(i, q.palette.getRed(i), q.palette.getGreen(i), q.palette.getBlue(i), 255);
+  }
+  palette.setRgba(255, 0, 0, 0, 0);
+
+  final enc = img.GifEncoder(repeat: 0);
+  for (final f in frames) {
+    final out = img.Image(width: f.width, height: f.height, numChannels: 1, palette: palette);
+    for (final p in f) {
+      out.getPixel(p.x, p.y).index = p.a < 110
+          ? 255
+          : q.getColorIndexRgb(p.r.toInt(), p.g.toInt(), p.b.toInt()).clamp(0, 254);
+    }
+    enc.addFrame(out, duration: delayCs);
+  }
+  return enc.finish()!;
 }
 
 class _KenBurnsJob {

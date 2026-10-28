@@ -13,10 +13,10 @@ class GradientText extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => ShaderMask(
-        blendMode: BlendMode.srcIn,
-        shaderCallback: (b) => gradient.createShader(Rect.fromLTWH(0, 0, b.width, b.height)),
-        child: Text(text, style: style),
-      );
+    blendMode: BlendMode.srcIn,
+    shaderCallback: (b) => gradient.createShader(Rect.fromLTWH(0, 0, b.width, b.height)),
+    child: Text(text, style: style),
+  );
 }
 
 class GradientButton extends StatelessWidget {
@@ -44,7 +44,9 @@ class GradientButton extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: gradient,
           borderRadius: BorderRadius.circular(18),
-          boxShadow: [BoxShadow(color: MindColors.pink.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6))],
+          boxShadow: [
+            BoxShadow(color: MindColors.pink.withValues(alpha: 0.3), blurRadius: 16, offset: const Offset(0, 6)),
+          ],
         ),
         child: Material(
           color: Colors.transparent,
@@ -66,8 +68,10 @@ class GradientButton extends StatelessWidget {
                   else if (icon != null)
                     Icon(icon, color: Colors.white, size: 20),
                   if (loading || icon != null) const SizedBox(width: 8),
-                  Text(label,
-                      style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
+                  Text(
+                    label,
+                    style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+                  ),
                 ],
               ),
             ),
@@ -127,17 +131,24 @@ class ToolTile extends StatelessWidget {
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                       decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(10)),
-                      child: Text(badge!,
-                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: MindColors.pink)),
+                      child: Text(
+                        badge!,
+                        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: MindColors.pink),
+                      ),
                     ),
                 ],
               ),
               const Spacer(),
-              Text(title, style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16)),
-              Text(subtitle,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                  style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12)),
+              Text(
+                title,
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 16),
+              ),
+              Text(
+                subtitle,
+                maxLines: 2,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: Colors.white.withValues(alpha: 0.9), fontSize: 12),
+              ),
             ],
           ),
         ),
@@ -148,7 +159,7 @@ class ToolTile extends StatelessWidget {
 
 /// Shows a friendly error, and an upgrade button when a daily limit is hit.
 void showError(BuildContext context, Object e) {
-  final quota = e is QuotaExceeded;
+  final quota = e is QuotaExceeded || e is NotEnoughPoints;
   ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(
       content: Text(e.toString().replaceFirst('Exception: ', '')),
@@ -172,14 +183,17 @@ class QuotaPill extends StatelessWidget {
   Widget build(BuildContext context) {
     final subs = context.watch<SubscriptionService>();
     final left = subs.limit(usage) < 0 ? '∞' : '${subs.remaining(usage)}';
+    final pts = subs.pointsLeft;
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
       decoration: BoxDecoration(
         color: MindColors.violet.withValues(alpha: 0.1),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text('متبقي اليوم: $left',
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: MindColors.violet)),
+      child: Text(
+        '💎 $pts نقطة · اليوم $left',
+        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700, color: MindColors.violet),
+      ),
     );
   }
 }

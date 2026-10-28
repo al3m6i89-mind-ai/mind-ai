@@ -36,13 +36,19 @@ class _CreationsScreenState extends State<CreationsScreen> {
                 Padding(
                   padding: const EdgeInsetsDirectional.only(end: 8),
                   child: ChoiceChip(
-                      label: const Text('الكل'), selected: _filter == null, onSelected: (_) => setState(() => _filter = null)),
+                    label: const Text('الكل'),
+                    selected: _filter == null,
+                    onSelected: (_) => setState(() => _filter = null),
+                  ),
                 ),
                 for (final k in CreationKind.values)
                   Padding(
                     padding: const EdgeInsetsDirectional.only(end: 8),
                     child: ChoiceChip(
-                        label: Text(k.label), selected: _filter == k, onSelected: (_) => setState(() => _filter = k)),
+                      label: Text(k.label),
+                      selected: _filter == k,
+                      onSelected: (_) => setState(() => _filter = k),
+                    ),
                   ),
               ],
             ),
@@ -50,13 +56,19 @@ class _CreationsScreenState extends State<CreationsScreen> {
           Expanded(
             child: items.isEmpty
                 ? const Center(
-                    child: Text('لا توجد إبداعات بعد ✨\nابدأ من الاستوديو',
-                        textAlign: TextAlign.center, style: TextStyle(color: MindColors.muted, fontSize: 16)),
+                    child: Text(
+                      'لا توجد إبداعات بعد ✨\nابدأ من الاستوديو',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: MindColors.muted, fontSize: 16),
+                    ),
                   )
                 : GridView.builder(
                     padding: const EdgeInsets.all(12),
                     gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                        crossAxisCount: 3, mainAxisSpacing: 8, crossAxisSpacing: 8),
+                      crossAxisCount: 3,
+                      mainAxisSpacing: 8,
+                      crossAxisSpacing: 8,
+                    ),
                     itemCount: items.length,
                     itemBuilder: (_, i) => _Thumb(c: items[i]),
                   ),
@@ -74,6 +86,8 @@ class _Thumb extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final isVideo = c.kind == CreationKind.video && !c.path.endsWith('.gif');
+    final isVoice = c.kind == CreationKind.voice;
+    final noPicture = isVideo || isVoice;
     return GestureDetector(
       onTap: () => showModalBottomSheet(
         context: context,
@@ -84,23 +98,21 @@ class _Thumb extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (!isVideo)
-                  ConstrainedBox(
-                    constraints: const BoxConstraints(maxHeight: 320),
-                    child: Image.file(File(c.path)),
-                  ),
+                if (!noPicture)
+                  ConstrainedBox(constraints: const BoxConstraints(maxHeight: 320), child: Image.file(File(c.path))),
                 const SizedBox(height: 8),
                 Text(c.prompt, textAlign: TextAlign.center),
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        icon: const Icon(Icons.download_rounded),
-                        label: const Text('حفظ'),
-                        onPressed: () => LibraryService.toGallery(c.path, video: isVideo),
+                    if (!isVoice)
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          icon: const Icon(Icons.download_rounded),
+                          label: const Text('حفظ'),
+                          onPressed: () => LibraryService.toGallery(c.path, video: isVideo),
+                        ),
                       ),
-                    ),
                     const SizedBox(width: 8),
                     Expanded(
                       child: FilledButton.icon(
@@ -127,8 +139,14 @@ class _Thumb extends StatelessWidget {
         borderRadius: BorderRadius.circular(14),
         child: Container(
           color: const Color(0xFFEDEAF7),
-          child: isVideo
-              ? const Center(child: Icon(Icons.play_circle_fill, size: 40, color: MindColors.violet))
+          child: noPicture
+              ? Center(
+                  child: Icon(
+                    isVoice ? Icons.graphic_eq_rounded : Icons.play_circle_fill,
+                    size: 40,
+                    color: MindColors.violet,
+                  ),
+                )
               : Image.file(File(c.path), fit: BoxFit.cover, cacheWidth: 300),
         ),
       ),

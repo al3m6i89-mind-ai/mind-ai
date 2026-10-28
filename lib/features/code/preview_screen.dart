@@ -25,10 +25,12 @@ class _PreviewTabState extends State<PreviewTab> {
   @override
   void initState() {
     super.initState();
-    _web.setOnConsoleMessage((m) => setState(() {
-          _console.add('[${m.level.name}] ${m.message}');
-          if (_console.length > 50) _console.removeAt(0);
-        }));
+    _web.setOnConsoleMessage(
+      (m) => setState(() {
+        _console.add('[${m.level.name}] ${m.message}');
+        if (_console.length > 50) _console.removeAt(0);
+      }),
+    );
     _reload();
   }
 
@@ -84,7 +86,14 @@ class _PreviewTabState extends State<PreviewTab> {
                       children: [
                         if (_console.isEmpty) const Text('No console output'),
                         for (final l in _console)
-                          Text(l, style: TextStyle(fontFamily: 'monospace', fontSize: 12, color: l.startsWith('[error]') ? Colors.red : null)),
+                          Text(
+                            l,
+                            style: TextStyle(
+                              fontFamily: 'monospace',
+                              fontSize: 12,
+                              color: l.startsWith('[error]') ? Colors.red : null,
+                            ),
+                          ),
                       ],
                     ),
                   ),
