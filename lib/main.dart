@@ -3,6 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'app/shell.dart';
+import 'features/auth/sign_in_screen.dart';
 import 'app/theme.dart';
 import 'providers/image_gen.dart';
 import 'providers/text_provider.dart';
@@ -65,7 +66,7 @@ class MindApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const Shell(),
+      home: context.read<SettingsService>().signedIn ? const Shell() : const SignInScreen(),
     );
   }
 }

@@ -36,6 +36,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final settings = await SettingsService.load();
     final subs = SubscriptionService(settings.prefs);
+    await subs.grantWelcome();
     final text = ScriptedText(settings, [
       '{"title_ar":"محول PDF","summary_ar":"تطبيق","features_ar":["دمج"],"files":[{"path":"index.html","purpose":"ui"},{"path":"style.css","purpose":"style"},{"path":"app.js","purpose":"logic"}]}',
       '<!doctype html><html dir="rtl"><body><main id="app">DROP</main></body></html>',
@@ -60,6 +61,7 @@ void main() {
     SharedPreferences.setMockInitialValues({});
     final settings = await SettingsService.load();
     final subs = SubscriptionService(settings.prefs);
+    await subs.grantWelcome();
     final text = ScriptedText(settings, [
       '{"title_ar":"مهام","files":[{"path":"lib/main.dart","purpose":"app"},{"path":"pubspec.yaml","purpose":"deps"}]}',
       "import 'package:flutter/material.dart';\nimport 'package:shared_preferences/shared_preferences.dart';\nvoid main() {}",

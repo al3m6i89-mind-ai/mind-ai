@@ -73,8 +73,14 @@ class Plan {
       Usage.codeAgent: 15,
       Usage.apkBuild: 2,
     },
-    points: 150,
-    perks: ['150 نقطة شهرياً', 'محادثة ذكية', 'حتى 15 صورة وملصق يومياً', 'فيديوهين يومياً', 'بناء APK مرتين يومياً'],
+    points: 0,
+    perks: [
+      '${SubscriptionService.welcomePoints} نقطة هدية عند التسجيل',
+      'محادثة ذكية',
+      'حتى 15 صورة وملصق يومياً',
+      'فيديوهين يومياً',
+      'بناء APK مرتين يومياً',
+    ],
   );
 
   static const pro = Plan(
@@ -132,12 +138,30 @@ class QuotaExceeded implements Exception {
   String toString() => 'وصلت للحد اليومي من ${usage.label} ($limit). رقِّ اشتراكك للمزيد.';
 }
 
+/// A one-time Google Play purchase that adds points to the wallet.
+class PointsPack {
+  const PointsPack(this.productId, this.points, this.price, {this.bonus = ''});
+  final String productId;
+  final int points;
+
+  /// Shown when the store price is not loaded yet.
+  final String price;
+  final String bonus;
+
+  static const all = [
+    PointsPack('mindai_points_300', 300, '\$0.99'),
+    PointsPack('mindai_points_1000', 1000, '\$2.99', bonus: '+10%'),
+    PointsPack('mindai_points_3500', 3500, '\$7.99', bonus: '+30%'),
+    PointsPack('mindai_points_10000', 10000, '\$19.99', bonus: 'الأوفر'),
+  ];
+}
+
 class NotEnoughPoints implements Exception {
   NotEnoughPoints(this.need, this.left);
   final int need;
   final int left;
   @override
-  String toString() => 'هذي الأداة تحتاج $need نقطة وباقي عندك $left. رقِّ اشتراكك أو اختر أداة أرخص.';
+  String toString() => 'هذي الأداة تحتاج $need نقطة وباقي عندك $left. اشترِ نقاط أو اختر أداة أرخص.';
 }
 
 class SubscriptionService extends ChangeNotifier {
@@ -167,8 +191,33 @@ class SubscriptionService extends ChangeNotifier {
     return '${d.year}-${d.month}';
   }
 
+  /// Points given once when a user signs in for the first time.
+  static const welcomePoints = 200;
+
   int get pointsUsed => _prefs.getInt('pts_$_month') ?? 0;
-  int get pointsLeft => max(0, plan.points - pointsUsed);
+
+  /// Plan points left this month; they reset on the 1st.
+  int get monthlyLeft => max(0, plan.points - pointsUsed);
+
+  /// Points that never expire: the welcome gift and purchased packs.
+  int get wallet => _prefs.getInt('wallet') ?? 0;
+
+  int get pointsLeft => monthlyLeft + wallet;
+
+  bool get welcomed => _prefs.getBool('welcomed') ?? false;
+
+  /// Gives the welcome gift once. Returns true when it was given now.
+  Future<bool> grantWelcome() async {
+    if (welcomed) return false;
+    await _prefs.setBool('welcomed', true);
+    await _addToWallet(welcomePoints);
+    return true;
+  }
+
+  Future<void> _addToWallet(int n) async {
+    await _prefs.setInt('wallet', wallet + n);
+    notifyListeners();
+  }
 
   /// Call before an action. Throws [QuotaExceeded] when the daily limit is hit,
   /// or [NotEnoughPoints] when the month's points can't pay for it.
@@ -181,7 +230,11 @@ class SubscriptionService extends ChangeNotifier {
 
   Future<void> consume(Usage u, {int? points}) async {
     await _prefs.setInt('use_${_today}_${u.name}', used(u) + 1);
-    await _prefs.setInt('pts_$_month', pointsUsed + (points ?? u.defaultPoints));
+    // Monthly plan points are spent first, then the wallet.
+    final cost = points ?? u.defaultPoints;
+    final fromMonth = min(cost, monthlyLeft);
+    await _prefs.setInt('pts_$_month', pointsUsed + fromMonth);
+    await _prefs.setInt('wallet', max(0, wallet - (cost - fromMonth)));
     notifyListeners();
   }
 
@@ -190,7 +243,10 @@ class SubscriptionService extends ChangeNotifier {
       storeAvailable = await _iap.isAvailable();
       if (!storeAvailable) return;
       _sub = _iap.purchaseStream.listen(_onPurchases);
-      final ids = Plan.all.map((p) => p.productId).where((id) => id.isNotEmpty).toSet();
+      final ids = {
+        ...Plan.all.map((p) => p.productId).where((id) => id.isNotEmpty),
+        ...PointsPack.all.map((p) => p.productId),
+      };
       final resp = await _iap.queryProductDetails(ids);
       products = {for (final p in resp.productDetails) p.id: p};
       await _iap.restorePurchases();
@@ -210,11 +266,27 @@ class SubscriptionService extends ChangeNotifier {
     await _iap.buyNonConsumable(purchaseParam: PurchaseParam(productDetails: product));
   }
 
+  String priceOfPack(PointsPack p) => products[p.productId]?.price ?? p.price;
+
+  Future<void> buyPack(PointsPack p) async {
+    final product = products[p.productId];
+    if (product == null) {
+      throw Exception(
+        'المتجر غير متاح الآن. أضف باقة النقاط ${p.productId} كمنتج داخل التطبيق في Google Play Console.',
+      );
+    }
+    await _iap.buyConsumable(purchaseParam: PurchaseParam(productDetails: product));
+  }
+
   Future<void> restore() => _iap.restorePurchases();
 
   Future<void> _onPurchases(List<PurchaseDetails> list) async {
     for (final pd in list) {
-      if (pd.status == PurchaseStatus.purchased || pd.status == PurchaseStatus.restored) {
+      final pack = PointsPack.all.where((p) => p.productId == pd.productID).firstOrNull;
+      if (pack != null) {
+        // Consumables are never "restored", so each purchase is credited once.
+        if (pd.status == PurchaseStatus.purchased) await _addToWallet(pack.points);
+      } else if (pd.status == PurchaseStatus.purchased || pd.status == PurchaseStatus.restored) {
         // NOTE: for production, verify pd.verificationData on your server before granting.
         final plan = Plan.all.firstWhere((p) => p.productId == pd.productID, orElse: () => Plan.free);
         await _setPlan(plan);

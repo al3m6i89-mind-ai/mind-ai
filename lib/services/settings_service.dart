@@ -42,6 +42,17 @@ extension TextBackendInfo on TextBackend {
   };
 
   bool get needsKey => this != TextBackend.pollinations;
+
+  /// Page where the user gets a key for this backend.
+  String? get keyUrl => switch (this) {
+    TextBackend.pollinations => 'https://enter.pollinations.ai',
+    TextBackend.anthropic => 'https://platform.claude.com/settings/keys',
+    TextBackend.openai => 'https://platform.openai.com/api-keys',
+    TextBackend.gemini => 'https://aistudio.google.com/apikey',
+    TextBackend.groq => 'https://console.groq.com/keys',
+    TextBackend.openrouter => 'https://openrouter.ai/keys',
+    TextBackend.custom => null,
+  };
 }
 
 extension ImageBackendInfo on ImageBackend {
@@ -86,6 +97,16 @@ class SettingsService extends ChangeNotifier {
     await _prefs.setBool('darkMode', v);
     notifyListeners();
   }
+
+  // ---- Account
+  bool get signedIn => _s('accountEmail').isNotEmpty;
+  String get accountEmail => _s('accountEmail');
+  Future<void> signIn(String name, String email) async {
+    await _prefs.setString('userName', name);
+    await _set('accountEmail', email);
+  }
+
+  Future<void> signOut() => _set('accountEmail', '');
 
   String get userName => _s('userName');
   Future<void> setUserName(String v) => _set('userName', v);

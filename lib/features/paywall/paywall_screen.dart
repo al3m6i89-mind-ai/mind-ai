@@ -25,6 +25,22 @@ class PaywallScreen extends StatelessWidget {
             child: Text('ابدأ مجاناً، ورقِّ متى ما احتجت أكثر', style: TextStyle(color: MindColors.muted)),
           ),
           const SizedBox(height: 18),
+          const Text('💎 اشترِ نقاط', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+          const SizedBox(height: 4),
+          const Text('النقاط المشتراة ما تنتهي، وتستخدمها في أي أداة.', style: TextStyle(color: MindColors.muted)),
+          const SizedBox(height: 10),
+          GridView.count(
+            crossAxisCount: 2,
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            mainAxisSpacing: 10,
+            crossAxisSpacing: 10,
+            childAspectRatio: 1.35,
+            children: [for (final p in PointsPack.all) _PackCard(pack: p)],
+          ),
+          const SizedBox(height: 18),
+          const Text('👑 أو اشترك شهرياً', style: TextStyle(fontWeight: FontWeight.w900, fontSize: 18)),
+          const SizedBox(height: 10),
           for (final p in Plan.all) _PlanCard(plan: p, current: subs.plan.id == p.id),
           const SizedBox(height: 8),
           TextButton(onPressed: subs.restore, child: const Text('استعادة المشتريات')),
@@ -38,8 +54,8 @@ class PaywallScreen extends StatelessWidget {
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    'نقاطك هذا الشهر: ${subs.pointsLeft} من ${subs.plan.points}\n'
-                    'كل أداة لها سعر بالنقاط حسب قوتها، وتتجدد النقاط أول كل شهر.',
+                    'رصيدك: ${subs.pointsLeft} نقطة\n'
+                    'كل أداة لها سعر بالنقاط حسب قوتها. نقاط الاشتراك تتجدد أول كل شهر.',
                     style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w700, height: 1.5),
                   ),
                 ),
@@ -158,6 +174,54 @@ class _PlanCard extends StatelessWidget {
                   },
                 ),
               ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _PackCard extends StatelessWidget {
+  const _PackCard({required this.pack});
+  final PointsPack pack;
+
+  @override
+  Widget build(BuildContext context) {
+    final subs = context.read<SubscriptionService>();
+    return InkWell(
+      borderRadius: BorderRadius.circular(20),
+      onTap: () async {
+        try {
+          await subs.buyPack(pack);
+        } catch (e) {
+          if (context.mounted) showError(context, e);
+        }
+      },
+      child: Container(
+        padding: const EdgeInsets.all(12),
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: MindColors.violet.withValues(alpha: 0.25)),
+        ),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (pack.bonus.isNotEmpty)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(gradient: MindColors.sunset, borderRadius: BorderRadius.circular(10)),
+                child: Text(
+                  pack.bonus,
+                  style: const TextStyle(color: Colors.white, fontSize: 11, fontWeight: FontWeight.w800),
+                ),
+              ),
+            const SizedBox(height: 4),
+            Text('💎 ${pack.points}', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 2),
+            Text(
+              subs.priceOfPack(pack),
+              style: const TextStyle(fontWeight: FontWeight.w800, color: MindColors.violet),
+            ),
           ],
         ),
       ),

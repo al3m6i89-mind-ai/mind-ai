@@ -164,6 +164,12 @@ Do not wrap files in markdown code fences.''';
   /// then Gemini) because those write far better code than the keyless default.
   TextBackend get _backend => _settings.bestTextBackend;
 
+  /// A request costs more on the strongest paid models.
+  int get _points => switch (_backend) {
+    TextBackend.anthropic || TextBackend.openai => 8,
+    _ => 3,
+  };
+
   /// Asks the model and survives dropped connections: retries, and when an
   /// answer was cut off part-way, asks it to continue from where it stopped.
   Future<String> _ask(
@@ -211,7 +217,7 @@ Do not wrap files in markdown code fences.''';
   /// each file → review; later requests edit the existing files in one pass.
   Future<List<FileChange>> runAgent(CodeProject p, String request, {String? errorLog}) async {
     if (busy) return [];
-    _subs.ensure(Usage.codeAgent);
+    _subs.ensure(Usage.codeAgent, points: _points);
     final fresh = !p.chat.any((m) => m.role == Role.user);
     busy = true;
     final userText = errorLog == null ? request : '$request\n\nBuild log:\n$errorLog';
@@ -224,7 +230,7 @@ Do not wrap files in markdown code fences.''';
     try {
       changes = fresh && errorLog == null ? await _buildFromIdea(p, request, reply) : await _edit(p, reply);
       if (p.type == ProjectType.flutter) _fixPubspec(p);
-      await _subs.consume(Usage.codeAgent);
+      await _subs.consume(Usage.codeAgent, points: _points);
     } catch (e) {
       reply.text = '${reply.text}\n\n⚠️ $e'.trim();
     } finally {

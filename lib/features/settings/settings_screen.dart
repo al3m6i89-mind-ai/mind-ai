@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../../app/theme.dart';
 import '../../services/settings_service.dart';
+import '../auth/sign_in_screen.dart';
 import '../paywall/paywall_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
@@ -19,6 +20,22 @@ class SettingsScreen extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         children: [
           _Section('عام', [
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const CircleAvatar(child: Icon(Icons.person)),
+              title: Text(s.userName.isEmpty ? 'حسابي' : s.userName),
+              subtitle: Text(s.accountEmail),
+              trailing: TextButton(
+                onPressed: () async {
+                  await s.signOut();
+                  if (context.mounted) {
+                    Navigator.of(context)
+                        .pushAndRemoveUntil(MaterialPageRoute(builder: (_) => const SignInScreen()), (_) => false);
+                  }
+                },
+                child: const Text('تسجيل خروج'),
+              ),
+            ),
             _Field(label: 'اسمك', value: s.userName, onSaved: s.setUserName),
             SwitchListTile(title: const Text('الوضع الليلي'), value: s.darkMode, onChanged: s.setDarkMode),
             ListTile(
@@ -141,6 +158,7 @@ class SettingsScreen extends StatelessWidget {
                 label: 'مفتاح API',
                 value: s.textKey(tb),
                 secret: true,
+                link: tb.keyUrl,
                 onSaved: (v) => s.setTextKey(tb, v),
               ),
             _Field(
@@ -157,10 +175,6 @@ class SettingsScreen extends StatelessWidget {
                 ltr: true,
                 onSaved: (v) => s.setTextBaseUrl(tb, v),
               ),
-            _Links(const [
-              ('مفتاح Groq مجاني', 'https://console.groq.com/keys'),
-              ('مفتاح OpenRouter', 'https://openrouter.ai/keys'),
-            ]),
           ]),
           _Section('🎨 الصور والملصقات', [
             DropdownButtonFormField<ImageBackend>(
@@ -183,6 +197,7 @@ class SettingsScreen extends StatelessWidget {
                 label: 'مفتاح Gemini',
                 value: '',
                 secret: true,
+                link: 'https://aistudio.google.com/apikey',
                 onSaved: (v) => s.setTextKey(TextBackend.gemini, v),
               ),
             if (s.imageBackend == ImageBackend.custom)
@@ -196,9 +211,9 @@ class SettingsScreen extends StatelessWidget {
               label: 'رمز Pollinations (اختياري، يرفع الحدود ويفعّل الفيديو)',
               value: s.pollinationsToken,
               secret: true,
+              link: 'https://enter.pollinations.ai',
               onSaved: s.setPollinationsToken,
             ),
-            _Links(const [('احصل على رمز Pollinations', 'https://enter.pollinations.ai')]),
           ]),
           _Section('🎬 الفيديو', [
             DropdownButtonFormField<VideoBackend>(
@@ -210,7 +225,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             if (s.videoBackend == VideoBackend.replicate) ...[
-              _Field(label: 'مفتاح Replicate', value: s.replicateKey, secret: true, onSaved: s.setReplicateKey),
+              _Field(
+                label: 'مفتاح Replicate',
+                value: s.replicateKey,
+                secret: true,
+                link: 'https://replicate.com/account/api-tokens',
+                onSaved: s.setReplicateKey,
+              ),
               _Field(
                 label: 'نموذج الفيديو',
                 value: s.replicateVideoModel,
@@ -235,8 +256,13 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 10),
             _Field(label: 'المستودع (owner/repo)', value: s.githubRepo, ltr: true, onSaved: s.setGithubRepo),
-            _Field(label: 'رمز GitHub', value: s.githubToken, secret: true, onSaved: s.setGithubToken),
-            _Links(const [('إنشاء رمز GitHub', 'https://github.com/settings/personal-access-tokens/new')]),
+            _Field(
+              label: 'رمز GitHub',
+              value: s.githubToken,
+              secret: true,
+              link: 'https://github.com/settings/personal-access-tokens/new',
+              onSaved: s.setGithubToken,
+            ),
           ]),
           const SizedBox(height: 20),
           const Center(
@@ -361,22 +387,4 @@ class _FieldState extends State<_Field> {
     final path = u.path.length > 1 && u.path.length < 22 ? u.path : '';
     return '${u.host.replaceFirst('www.', '')}$path';
   }
-}
-
-class _Links extends StatelessWidget {
-  const _Links(this.links);
-  final List<(String, String)> links;
-
-  @override
-  Widget build(BuildContext context) => Wrap(
-    spacing: 8,
-    children: [
-      for (final (label, url) in links)
-        ActionChip(
-          avatar: const Icon(Icons.open_in_new, size: 16),
-          label: Text(label),
-          onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
-        ),
-    ],
-  );
 }

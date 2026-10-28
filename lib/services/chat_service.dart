@@ -184,7 +184,10 @@ class ChatService extends ChangeNotifier {
         await _subs.consume(Usage.image, points: tool.points);
         _replace(c, reply, ChatMessage(role: Role.assistant, text: 'تفضل! 🎨 «$prompt»', imageUrl: saved.path));
       } else {
-        _subs.ensure(Usage.chat);
+        // Messages on the paid models cost a point; the free models cost nothing.
+        final paid = {TextBackend.anthropic, TextBackend.openai}.contains(_settings.textBackend);
+        final chatPoints = paid ? 1 : 0;
+        _subs.ensure(Usage.chat, points: chatPoints);
         final persona = Persona.byId(c.personaId);
         final history = c.messages.where((m) => m != reply).toList();
         var window = history.length > 20 ? history.sublist(history.length - 20) : history;
@@ -215,7 +218,7 @@ class ChatService extends ChangeNotifier {
           }
           reply.text += '\n\n> 💡 النموذج المجاني الحالي لا يرى الصور. أضف مفتاح Gemini المجاني من الإعدادات ليفهم صورك ويعدّلها. ولحذف الخلفية اكتب «احذف الخلفية» مع الصورة.';
         }
-        await _subs.consume(Usage.chat);
+        await _subs.consume(Usage.chat, points: chatPoints);
       }
     } catch (e) {
       reply.text = '⚠️ $e';

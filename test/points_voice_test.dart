@@ -15,10 +15,13 @@ void main() {
   test('points are charged per tool and run out', () async {
     SharedPreferences.setMockInitialValues({});
     final subs = SubscriptionService(await SharedPreferences.getInstance());
-    expect(subs.pointsLeft, Plan.free.points);
+    expect(subs.pointsLeft, 0);
+    expect(await subs.grantWelcome(), isTrue);
+    expect(await subs.grantWelcome(), isFalse); // only once
+    expect(subs.pointsLeft, SubscriptionService.welcomePoints);
     subs.ensure(Usage.video, points: 40);
     await subs.consume(Usage.video, points: 40);
-    expect(subs.pointsLeft, Plan.free.points - 40);
+    expect(subs.pointsLeft, SubscriptionService.welcomePoints - 40);
     expect(() => subs.ensure(Usage.image, points: 1000), throwsA(isA<NotEnoughPoints>()));
   });
 
