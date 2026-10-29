@@ -31,6 +31,8 @@ echo "device running"
 session=$(j -X POST "$API/devices/$device/sessions")
 url="$(jq -r .gatewayUrl <<<"$session")?ticket=$(jq -r .token <<<"$session")"
 echo "session gateway: $(jq -r .gatewayUrl <<<"$session")"
+[ -z "${EXPECT_GATEWAY_PREFIX:-}" ] || [[ "$(jq -r .gatewayUrl <<<"$session")" == "$EXPECT_GATEWAY_PREFIX"* ]] \
+    || { echo "gateway is not the tunnel"; exit 1; }
 (cd "$(dirname "$0")/.." && STREAM_URL="$url" go run ./cmd/e2e)
 j -X DELETE "$API/sessions/$(jq -r .sessionId <<<"$session")" >/dev/null
 j -X DELETE "$API/devices/$device" >/dev/null

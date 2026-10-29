@@ -9,8 +9,8 @@ class StartupGuards(private val props: AppProperties) {
     @PostConstruct
     fun check() {
         if (props.devices.activeProvider == "redroid") {
-            check(props.devices.redroid.nodeUrl.isNotBlank() && props.devices.redroid.nodeToken.length >= 32) {
-                "DEVICE_PROVIDER=redroid needs REDROID_NODE_URL and REDROID_NODE_TOKEN (printed by the node install script)"
+            check(props.devices.redroid.nodeToken.length >= 32) {
+                "DEVICE_PROVIDER=redroid needs REDROID_NODE_TOKEN (printed by the node install script)"
             }
         }
         if (!props.isProduction) return

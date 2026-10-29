@@ -110,27 +110,32 @@ jobs:
         working-directory: node-agent
         run: go test ./...
       - name: Install node
-        run: sudo ANDROID_VERSIONS=13 MAX_DEVICES=2 SKIP_HTTPS=1 AGENT_SRC="$PWD/node-agent" bash node-agent/install.sh
+        # x86 reaches the node through a Cloudflare quick tunnel, like a home laptop does.
+        run: |
+          sudo ANDROID_VERSIONS=13 MAX_DEVICES=2 SKIP_HTTPS=1 AGENT_SRC="$PWD/node-agent" \
+            TUNNEL=${{ matrix.runner == 'ubuntu-24.04' && 'cloudflare' || 'none' }} \
+            BACKEND_URL=http://127.0.0.1:8080/api/v1 bash node-agent/install.sh
       - name: End-to-end
         working-directory: node-agent
         run: |
           token=$(sudo sed -n 's/^NODE_TOKEN=//p' /opt/nuvola/node.env)
           NODE_URL=http://127.0.0.1:7100 NODE_TOKEN="$token" ANDROID_VERSION=13 \
             CHECK_GAPPS=1 CHECK_MAGISK=1 SCREENSHOT="$GITHUB_WORKSPACE/phone-screen.png" go run ./cmd/e2e
-      - name: Full stack (backend + node)
+      - name: Full stack (backend + node through the tunnel)
         if: matrix.runner == 'ubuntu-24.04'
         run: |
           token=$(sudo sed -n 's/^NODE_TOKEN=//p' /opt/nuvola/node.env)
           docker run -d --name pg --network host -e POSTGRES_DB=nuvola -e POSTGRES_USER=nuvola -e POSTGRES_PASSWORD=nuvola postgres:16
           docker build -q -t nuvola/backend backend
           docker run -d --name backend --network host -e SPRING_PROFILES_ACTIVE=demo -e DB_HOST=127.0.0.1 \
-            -e JWT_SECRET=ci-secret-ci-secret-ci-secret-ci-secret-1234 -e DEVICE_PROVIDER=redroid \
-            -e REDROID_NODE_URL=http://127.0.0.1:7100 -e REDROID_NODE_TOKEN="$token" nuvola/backend
-          bash node-agent/scripts/fullstack.sh
+            -e JWT_SECRET=ci-secret-ci-secret-ci-secret-ci-secret-1234 -e DEVICE_PROVIDER=auto \
+            -e REDROID_NODE_TOKEN="$token" nuvola/backend
+          EXPECT_GATEWAY_PREFIX=wss:// bash node-agent/scripts/fullstack.sh
       - if: always()
         run: |
           docker logs backend > backend.log 2>&1 || true
           docker logs nuvola-agent > agent.log 2>&1 || true
+          docker logs nuvola-tunnel > tunnel.log 2>&1 || true
           docker image ls > images.txt || true
       - if: always()
         uses: actions/upload-artifact@v4
@@ -139,5 +144,6 @@ jobs:
           path: |
             agent.log
             backend.log
+            tunnel.log
             images.txt
             phone-screen.png

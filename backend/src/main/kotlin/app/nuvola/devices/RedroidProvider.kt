@@ -20,12 +20,22 @@ import javax.crypto.spec.SecretKeySpec
  * with a ticket signed here, so video never passes through this backend.
  */
 @Component
-class RedroidProvider(private val props: AppProperties, private val mapper: ObjectMapper) : CloudDeviceProvider {
+class RedroidProvider(
+    private val props: AppProperties,
+    private val mapper: ObjectMapper,
+    private val nodes: PhoneNodeRepository,
+) : CloudDeviceProvider {
     override val id = "redroid"
     override val simulated = false
     override val supportsStreaming = true
 
     private val node get() = props.devices.redroid
+
+    /** A fixed REDROID_NODE_URL wins; otherwise the address the node last reported (it may sit behind a tunnel). */
+    private fun nodeUrl(): String = node.nodeUrl.ifBlank {
+        nodes.findById(PhoneNodeController.MAIN).map { it.publicUrl }.orElse(null)
+            ?: throw ProviderException("The phone server has not connected yet", retryable = true)
+    }.trimEnd('/')
     private val http: HttpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(15)).build()
 
     override fun create(spec: DeviceSpec): String {
@@ -48,7 +58,7 @@ class RedroidProvider(private val props: AppProperties, private val mapper: Obje
 
     override fun issueConnection(ref: String, ttl: Duration): StreamConnection {
         val expiresAt = Instant.now().plus(ttl)
-        val gateway = node.nodeUrl.trimEnd('/').replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
+        val gateway = nodeUrl().replaceFirst("https://", "wss://").replaceFirst("http://", "ws://")
         return StreamConnection("$gateway/v1/stream/$ref", ticket(ref, expiresAt), expiresAt)
     }
 
@@ -60,7 +70,7 @@ class RedroidProvider(private val props: AppProperties, private val mapper: Obje
     }
 
     private fun call(method: String, path: String, body: Any? = null): Map<String, Any?> {
-        val request = HttpRequest.newBuilder(URI.create(node.nodeUrl.trimEnd('/') + path))
+        val request = HttpRequest.newBuilder(URI.create(nodeUrl() + path))
             .timeout(node.requestTimeout)
             .header("Authorization", "Bearer ${node.nodeToken}")
             .header("Content-Type", "application/json")

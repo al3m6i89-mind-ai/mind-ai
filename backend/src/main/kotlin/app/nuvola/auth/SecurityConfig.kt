@@ -57,6 +57,7 @@ class SecurityConfig(
                 authorize(HttpMethod.GET, "/api/v1/catalog", permitAll)
                 authorize("/api/v1/auth/logout", authenticated)
                 authorize("/api/v1/auth/**", permitAll)
+                authorize(HttpMethod.POST, "/api/v1/nodes/heartbeat", permitAll) // checks X-Node-Token itself
                 authorize("/api/v1/openapi/**", permitAll)
                 authorize("/api/v1/docs/**", permitAll)
                 authorize("/swagger-ui/**", permitAll)

@@ -15,9 +15,8 @@ services:
       # "auto" serves simulated phones until a real phone node is configured below.
       - key: DEVICE_PROVIDER
         value: auto
-      # Printed by node-agent/install.sh on the phone server. Set them in Render > Environment.
-      - key: REDROID_NODE_URL
-        sync: false
+      # Printed by node-agent/install.sh on the phone server; set it in Render > Environment.
+      # The node then reports its own address every minute.
       - key: REDROID_NODE_TOKEN
         sync: false
       - key: JWT_SECRET

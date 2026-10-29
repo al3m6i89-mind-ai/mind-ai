@@ -27,17 +27,24 @@ type Config struct {
 	Network      string
 	ScrcpyServer string
 	BootTimeout  time.Duration
+	// Optional: report this node's address to the backend (see heartbeat.go).
+	BackendURL    string
+	PublicURL     string
+	TunnelMetrics string
 }
 
 func loadConfig() Config {
 	c := Config{
-		Token:        os.Getenv("NODE_TOKEN"),
-		Listen:       env("LISTEN", "127.0.0.1:7100"),
-		MaxDevices:   envInt("MAX_DEVICES", 4),
-		ImageRepo:    env("IMAGE_REPO", "nuvola/android"),
-		Network:      env("DOCKER_NETWORK", "nuvola"),
-		ScrcpyServer: env("SCRCPY_SERVER", "/opt/nuvola/scrcpy-server"),
-		BootTimeout:  time.Duration(envInt("BOOT_TIMEOUT_SECONDS", 300)) * time.Second,
+		Token:         os.Getenv("NODE_TOKEN"),
+		Listen:        env("LISTEN", "127.0.0.1:7100"),
+		MaxDevices:    envInt("MAX_DEVICES", 4),
+		ImageRepo:     env("IMAGE_REPO", "nuvola/android"),
+		Network:       env("DOCKER_NETWORK", "nuvola"),
+		ScrcpyServer:  env("SCRCPY_SERVER", "/opt/nuvola/scrcpy-server"),
+		BootTimeout:   time.Duration(envInt("BOOT_TIMEOUT_SECONDS", 300)) * time.Second,
+		BackendURL:    os.Getenv("BACKEND_URL"),
+		PublicURL:     os.Getenv("PUBLIC_URL"),
+		TunnelMetrics: os.Getenv("TUNNEL_METRICS"),
 	}
 	if len(c.Token) < 32 {
 		log.Fatal("NODE_TOKEN must be set to a random value of at least 32 characters")
@@ -106,6 +113,8 @@ func main() {
 		}
 		nodes.Stream(w, r, ref)
 	})
+
+	go heartbeat(context.Background(), cfg)
 
 	srv := &http.Server{Addr: cfg.Listen, Handler: mux, ReadHeaderTimeout: 10 * time.Second}
 	go func() {

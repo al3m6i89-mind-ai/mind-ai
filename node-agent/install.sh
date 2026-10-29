@@ -13,6 +13,11 @@ ANDROID_VERSIONS=${ANDROID_VERSIONS:-"12 13 14"}
 WITH_GAPPS=${WITH_GAPPS:-1}
 MAX_DEVICES=${MAX_DEVICES:-auto}
 DOMAIN=${DOMAIN:-}
+# "cloudflare" reaches the node through a free Cloudflare quick tunnel: for a home computer
+# with no public IP or open ports. Otherwise the server needs ports 80 and 443 open.
+TUNNEL=${TUNNEL:-none}
+# The backend the node reports its address to.
+BACKEND_URL=${BACKEND_URL:-https://nuvola-api-zuhair.onrender.com/api/v1}
 # For testing: build the agent from a local checkout and skip the public HTTPS setup.
 AGENT_SRC=${AGENT_SRC:-}
 SKIP_HTTPS=${SKIP_HTTPS:-0}
@@ -90,34 +95,59 @@ fi
 if [ ! -f "$DIR/node.env" ]; then
     echo "NODE_TOKEN=${NODE_TOKEN:-$(openssl rand -hex 32)}" > "$DIR/node.env"
 fi
-sed -i '/^MAX_DEVICES=/d' "$DIR/node.env"
-echo "MAX_DEVICES=$MAX_DEVICES" >> "$DIR/node.env"
 chmod 600 "$DIR/node.env"
+set_env() { sed -i "/^$1=/d" "$DIR/node.env"; [ -z "$2" ] || echo "$1=$2" >> "$DIR/node.env"; }
+set_env MAX_DEVICES "$MAX_DEVICES"
+set_env BACKEND_URL "$BACKEND_URL"
+
+if [ "$TUNNEL" = cloudflare ]; then
+    set_env PUBLIC_URL ""
+    set_env TUNNEL_METRICS 127.0.0.1:20241
+elif [ "$SKIP_HTTPS" != 1 ]; then
+    if [ -z "$DOMAIN" ]; then
+        ip=$(curl -fsS https://api.ipify.org) || fail "Could not find this server's public IP address."
+        DOMAIN="${ip//./-}.sslip.io"
+    fi
+    set_env PUBLIC_URL "https://$DOMAIN"
+    set_env TUNNEL_METRICS ""
+fi
 
 step "Starting the node agent"
 docker rm -f nuvola-agent >/dev/null 2>&1 || true
 docker run -d --name nuvola-agent --restart unless-stopped --network host \
     -v /var/run/docker.sock:/var/run/docker.sock --env-file "$DIR/node.env" nuvola/agent >/dev/null
 
-if [ "$SKIP_HTTPS" = 1 ]; then
+if [ "$SKIP_HTTPS" = 1 ] && [ "$TUNNEL" != cloudflare ]; then
     echo "Agent running on 127.0.0.1:7100 (HTTPS skipped)."
     exit 0
 fi
 
-step "Opening ports 80 and 443 and setting up HTTPS"
-for port in 80 443; do
-    iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
-done
-command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1 || true
-command -v ufw >/dev/null && ufw status | grep -q active && ufw allow 80,443/tcp >/dev/null || true
-if [ -z "$DOMAIN" ]; then
-    ip=$(curl -fsS https://api.ipify.org) || fail "Could not find this server's public IP address."
-    DOMAIN="${ip//./-}.sslip.io"
+docker rm -f nuvola-tunnel nuvola-caddy >/dev/null 2>&1 || true
+if [ "$TUNNEL" = cloudflare ]; then
+    # No open ports or public IP needed (home internet). The address changes on every restart;
+    # the agent reports it to the backend each minute.
+    step "Starting the Cloudflare tunnel"
+    docker run -d --name nuvola-tunnel --restart unless-stopped --network host \
+        cloudflare/cloudflared:2024.12.2 tunnel --no-autoupdate --metrics 127.0.0.1:20241 --url http://127.0.0.1:7100 >/dev/null
+    host=""
+    for _ in $(seq 1 30); do
+        host=$(curl -fsS http://127.0.0.1:20241/quicktunnel 2>/dev/null | sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p')
+        [ -n "$host" ] && break
+        sleep 3
+    done
+    [ -n "$host" ] || fail "The Cloudflare tunnel did not start. Check: docker logs nuvola-tunnel"
+    DOMAIN=$host
+else
+    step "Opening ports 80 and 443 and setting up HTTPS"
+    for port in 80 443; do
+        iptables -C INPUT -p tcp --dport "$port" -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport "$port" -j ACCEPT
+    done
+    command -v netfilter-persistent >/dev/null && netfilter-persistent save >/dev/null 2>&1 || true
+    command -v ufw >/dev/null && ufw status | grep -q active && ufw allow 80,443/tcp >/dev/null || true
+    printf '%s {\n    reverse_proxy 127.0.0.1:7100\n}\n' "$DOMAIN" > "$DIR/Caddyfile"
+    docker run -d --name nuvola-caddy --restart unless-stopped --network host \
+        -v "$DIR/Caddyfile:/etc/caddy/Caddyfile:ro" -v nuvola-caddy-data:/data caddy:2.8 >/dev/null
 fi
-printf '%s {\n    reverse_proxy 127.0.0.1:7100\n}\n' "$DOMAIN" > "$DIR/Caddyfile"
-docker rm -f nuvola-caddy >/dev/null 2>&1 || true
-docker run -d --name nuvola-caddy --restart unless-stopped --network host \
-    -v "$DIR/Caddyfile:/etc/caddy/Caddyfile:ro" -v nuvola-caddy-data:/data caddy:2.8 >/dev/null
 
 step "Checking https://$DOMAIN"
 ok=0
@@ -128,11 +158,13 @@ done
 token=$(sed -n 's/^NODE_TOKEN=//p' "$DIR/node.env")
 echo
 if [ "$ok" = 1 ]; then
-    printf '\033[1;32mNuvola node is ready.\033[0m Add these two settings to the backend (Render > Environment):\n\n'
+    printf '\033[1;32mNuvola node is ready at https://%s\033[0m\n\n' "$DOMAIN"
 else
     printf '\033[1;33mThe node runs, but https://%s is not reachable yet.\033[0m\n' "$DOMAIN"
-    printf 'Open TCP ports 80 and 443 in your cloud firewall (Oracle: VCN > Security List > Ingress rules), then run this script again.\n'
-    printf 'Backend settings once it is reachable:\n\n'
+    [ "$TUNNEL" = cloudflare ] || printf 'Open TCP ports 80 and 443 in your cloud firewall (Oracle: VCN > Security List > Ingress rules), then run this script again.\n'
+    echo
 fi
-printf '  DEVICE_PROVIDER=redroid\n  REDROID_NODE_URL=https://%s\n  REDROID_NODE_TOKEN=%s\n\n' "$DOMAIN" "$token"
+printf 'Add this one setting to the backend (Render > nuvola-api-zuhair > Environment):\n\n'
+printf '  REDROID_NODE_TOKEN=%s\n\n' "$token"
+printf 'The node reports its address to %s every minute.\n' "$BACKEND_URL"
 printf 'Images: %s\nMax phones: %s\n' "$(docker image ls --format '{{.Tag}}' nuvola/android | sort | tr '\n' ' ')" "$MAX_DEVICES"
