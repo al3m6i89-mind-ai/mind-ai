@@ -6,8 +6,9 @@ Working name; the brand can change before launch.
 | --- | --- |
 | `backend/` | Kotlin + Spring Boot API, PostgreSQL (Flyway migrations), device job queue |
 | `android/` | Kotlin + Jetpack Compose app, Arabic and English with RTL |
+| `node-agent/` | Go agent for a phone server: runs Android in Redroid containers and streams screens |
 | `docker-compose.yml` | Local PostgreSQL, Redis and API |
-| `.github/workflows/ci.yml` | Backend tests and a debug APK build on every push |
+| `.github/workflows/ci.yml` | Backend tests, APK builds, an emulator launch check and a real-phone end-to-end test |
 
 ## What is real and what is not yet
 
@@ -19,17 +20,36 @@ Real and tested:
 - Device lifecycle (create, start, stop, restart, root on/off, delete) through a database job queue
   that survives restarts, with idempotent creation so a double tap never makes two phones.
 - Android version chosen by the user from images the server actually has; root as a per-phone option.
+- **Real Android phones** (provider `redroid`): Android 12, 13 and 14 in Redroid containers on a phone server,
+  with Google Play (MindTheGapps) and, when root is on, Magisk. Root on/off swaps the system image and keeps the
+  phone's data. CI boots a phone on x86 and ARM, checks Google Play and Magisk, and drives the whole flow
+  through the backend.
+- **Live screen and touch**: the app opens a session on the backend, which signs a 60-second ticket; the app
+  then connects to the phone server directly (WebSocket over HTTPS), decodes H.264 with MediaCodec and sends
+  multi-touch and Back/Home/Recents as scrcpy control messages.
 
 Not real yet:
 
-- **No Android runs anywhere.** The only installed device provider is `mock`, which walks phones through
-  states with a delay. The API and the app label these phones "Simulated". The server refuses to start in
-  production with this provider.
-- **No screen streaming.** Opening a phone returns `STREAMING_NOT_AVAILABLE`. Phase 4 adds the stream gateway,
-  the on-host device agent and the video/touch client.
+- Without a phone server the backend uses the `mock` provider (labelled "Simulated" in the app).
+  Production refuses to start with it.
+- One phone server per backend for now; several servers and regions come with the admin dashboard.
+- No audio from the phone, and no per-phone storage limit (the plan's storage is shown but not enforced).
 - **No payments.** Development servers can activate a plan without paying (`provider = dev-unpaid`);
   production returns `PAYMENT_REQUIRED`. Phase 5 adds Google Play Billing or an approved provider.
 - Google sign-in, push notifications and the admin dashboard are not built yet.
+
+## Set up a phone server
+
+Any Ubuntu 22.04/24.04 server with a full kernel (not a container VPS), x86_64 or ARM, for example
+Oracle Cloud's free Ampere A1 (4 cores, 24 GB). Open TCP 80 and 443, then as root:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/nuvola-cloudphone/node-agent/install.sh | sudo bash
+```
+
+It builds the Android images, starts the agent behind HTTPS (Caddy, with a `<ip>.sslip.io` name) and prints
+`REDROID_NODE_URL` and `REDROID_NODE_TOKEN`. Set both on the backend; with `DEVICE_PROVIDER=auto` it switches
+from simulated to real phones.
 
 ## Run the backend
 
