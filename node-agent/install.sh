@@ -131,7 +131,7 @@ if [ "$TUNNEL" = cloudflare ]; then
         cloudflare/cloudflared:2024.12.2 tunnel --no-autoupdate --metrics 127.0.0.1:20241 --url http://127.0.0.1:7100 >/dev/null
     host=""
     for _ in $(seq 1 30); do
-        host=$(curl -fsS http://127.0.0.1:20241/quicktunnel 2>/dev/null | sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p')
+        host=$( (curl -fsS http://127.0.0.1:20241/quicktunnel 2>/dev/null || true) | sed -n 's/.*"hostname":"\([^"]*\)".*/\1/p')
         [ -n "$host" ] && break
         sleep 3
     done
