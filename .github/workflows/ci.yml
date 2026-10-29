@@ -90,3 +90,42 @@ jobs:
           path: |
             android/logcat.txt
             android/screen.png
+
+  node-e2e:
+    # Installs a real phone node with the same script users run, boots Android (with Google Play
+    # and a Magisk root image), streams the screen, sends input and walks the whole lifecycle.
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: [ubuntu-24.04, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache-dependency-path: node-agent/go.sum
+      - name: Unit tests
+        working-directory: node-agent
+        run: go test ./...
+      - name: Install node
+        run: sudo ANDROID_VERSIONS=13 MAX_DEVICES=2 SKIP_HTTPS=1 AGENT_SRC="$PWD/node-agent" bash node-agent/install.sh
+      - name: End-to-end
+        working-directory: node-agent
+        run: |
+          token=$(sudo sed -n 's/^NODE_TOKEN=//p' /opt/nuvola/node.env)
+          NODE_URL=http://127.0.0.1:7100 NODE_TOKEN="$token" ANDROID_VERSION=13 \
+            CHECK_GAPPS=1 CHECK_MAGISK=1 SCREENSHOT="$GITHUB_WORKSPACE/phone-screen.png" go run ./cmd/e2e
+      - if: always()
+        run: |
+          docker logs nuvola-agent > agent.log 2>&1 || true
+          docker image ls > images.txt || true
+      - if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: node-e2e-${{ matrix.runner }}
+          path: |
+            agent.log
+            images.txt
+            phone-screen.png
