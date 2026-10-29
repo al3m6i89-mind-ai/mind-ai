@@ -19,6 +19,7 @@ func heartbeat(ctx context.Context, cfg Config) {
 	client := &http.Client{Timeout: 90 * time.Second} // a sleeping free backend can take a minute to wake
 	last := ""
 	for {
+		wait := 5 * time.Second // retry soon until the tunnel and the backend answer
 		url := cfg.PublicURL
 		if url == "" && cfg.TunnelMetrics != "" {
 			url = tunnelURL(client, cfg.TunnelMetrics)
@@ -34,9 +35,12 @@ func heartbeat(ctx context.Context, cfg Config) {
 				log.Printf("heartbeat: %v", err)
 			case resp.StatusCode != http.StatusNoContent:
 				log.Printf("heartbeat: backend answered %d (check REDROID_NODE_TOKEN on the backend)", resp.StatusCode)
-			case url != last:
-				log.Printf("heartbeat: backend knows this node as %s", url)
-				last = url
+			default:
+				wait = time.Minute
+				if url != last {
+					log.Printf("heartbeat: backend knows this node as %s", url)
+					last = url
+				}
 			}
 			if resp != nil {
 				resp.Body.Close()
@@ -45,7 +49,7 @@ func heartbeat(ctx context.Context, cfg Config) {
 		select {
 		case <-ctx.Done():
 			return
-		case <-time.After(time.Minute):
+		case <-time.After(wait):
 		}
 	}
 }
