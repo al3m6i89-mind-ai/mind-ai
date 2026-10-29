@@ -132,7 +132,7 @@ class DeviceService(
         val image = images.findById(cmd.androidImageId)
             .filter { it.active && it.providerId == provider.id && it.deviceType == plan.deviceType }
             .orElse(null) ?: throw ApiException(ErrorCode.IMAGE_NOT_AVAILABLE, "This Android version is not available")
-        val region = regions.findById(cmd.regionId).filter { it.active }.orElse(null)
+        val region = regions.findById(cmd.regionId).filter { it.active && it.servedBy(provider.id) }.orElse(null)
             ?: throw ApiException(ErrorCode.REGION_NOT_AVAILABLE, "This location is not available")
         if (cmd.rootEnabled && !(plan.rootAllowed && image.rootSupported)) {
             throw ApiException(ErrorCode.ROOT_NOT_ALLOWED, "Root is not available for this plan or Android version")

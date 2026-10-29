@@ -1,7 +1,8 @@
-# Public demo server: simulated phones, no payments, no outgoing email.
+# Public demo server: no payments, no outgoing email. Phones are simulated unless
+# DEVICE_PROVIDER=redroid points it at a real phone node.
 spring:
   flyway:
-    locations: classpath:db/migration,classpath:db/dev
+    locations: classpath:db/migration,classpath:db/dev,classpath:db/redroid
 app:
   environment: demo
   mail:

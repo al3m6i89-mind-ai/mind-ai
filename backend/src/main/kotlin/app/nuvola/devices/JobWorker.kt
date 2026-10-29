@@ -129,7 +129,7 @@ class JobWorker(
 
     private fun specFor(d: CloudDevice): DeviceSpec {
         val plan = plans.findById(subs.findById(d.subscriptionId).orElseThrow().planId).orElseThrow()
-        return DeviceSpec(d.deviceType, d.androidImageId, d.region, d.cpuConfig, d.ramConfig, d.storageConfig,
+        return DeviceSpec(d.deviceType, d.androidImageId, d.androidVersion, d.region, d.cpuConfig, d.ramConfig, d.storageConfig,
             d.screenWidth, d.screenHeight, d.screenDpi, plan.maxFps, d.rootEnabled)
     }
 }

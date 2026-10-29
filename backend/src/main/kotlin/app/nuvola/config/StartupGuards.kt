@@ -8,6 +8,11 @@ import org.springframework.stereotype.Component
 class StartupGuards(private val props: AppProperties) {
     @PostConstruct
     fun check() {
+        if (props.devices.provider == "redroid") {
+            check(props.devices.redroid.nodeUrl.isNotBlank() && props.devices.redroid.nodeToken.length >= 32) {
+                "DEVICE_PROVIDER=redroid needs REDROID_NODE_URL and REDROID_NODE_TOKEN (printed by the node install script)"
+            }
+        }
         if (!props.isProduction) return
         val problems = buildList {
             if (props.devices.provider == "mock") add("DEVICE_PROVIDER=mock is not allowed in production")

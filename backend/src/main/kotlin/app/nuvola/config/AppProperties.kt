@@ -37,6 +37,14 @@ data class AppProperties(
         val jobPollInterval: Duration,
         val jobTimeout: Duration,
         val mockStepDelay: Duration,
+        val redroid: Redroid = Redroid(),
+    )
+
+    /** One Redroid node (a server running the Nuvola node agent). */
+    data class Redroid(
+        val nodeUrl: String = "",
+        val nodeToken: String = "",
+        val requestTimeout: Duration = Duration.ofMinutes(8),
     )
 
     data class Streaming(val sessionTokenTtl: Duration)

@@ -15,6 +15,8 @@ spring:
       hibernate.jdbc.time_zone: UTC
   flyway:
     locations: classpath:db/migration
+    # Catalog seeds (db/dev, db/redroid) use high version numbers; schema changes added later still apply.
+    out-of-order: true
   jackson:
     default-property-inclusion: non_null
     serialization:
@@ -69,6 +71,9 @@ app:
     job-poll-interval: PT1S
     job-timeout: PT10M
     mock-step-delay: PT2S
+    redroid:
+      node-url: ${REDROID_NODE_URL:}
+      node-token: ${REDROID_NODE_TOKEN:}
   streaming:
     session-token-ttl: PT60S
   billing:

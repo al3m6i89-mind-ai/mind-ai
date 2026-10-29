@@ -27,9 +27,13 @@ class Region(
     @Id val id: String,
     var displayName: String,
     var countryCode: String?,
+    /** Null means every provider serves this region. */
+    var providerId: String?,
     var active: Boolean,
     var sortOrder: Int,
-)
+) {
+    fun servedBy(provider: String) = providerId == null || providerId == provider
+}
 
 @Entity
 @Table(name = "android_images")
@@ -126,7 +130,7 @@ class CatalogController(
                     AndroidImageDto(it.id, it.androidVersion, it.apiLevel, it.displayName, it.deviceType,
                         it.rootSupported, it.preinstalledApps, provider.simulated)
                 },
-            regions = regions.findByActiveTrueOrderBySortOrder().map { RegionDto(it.id, it.displayName, it.countryCode) },
+            regions = regions.findByActiveTrueOrderBySortOrder().filter { it.servedBy(provider.id) }.map { RegionDto(it.id, it.displayName, it.countryCode) },
         )
     }
 

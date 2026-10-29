@@ -9,6 +9,7 @@ import java.time.Instant
 data class DeviceSpec(
     val deviceType: DeviceType,
     val androidImageId: String,
+    val androidVersion: String,
     val region: String,
     val cpuCores: Int,
     val ramMb: Int,
