@@ -33,6 +33,12 @@ var (
 
 func main() {
 	log.SetFlags(log.Ltime)
+	// Full-stack mode: the backend issued the session; only check the stream it points to.
+	if u := os.Getenv("STREAM_URL"); u != "" {
+		stream(u)
+		log.Print("STREAM CHECK PASSED")
+		return
+	}
 	var node struct {
 		Arch     string
 		Versions []struct {
@@ -60,7 +66,7 @@ func main() {
 	if resp.StatusCode != 401 {
 		log.Fatalf("forged ticket: want 401, got %d", resp.StatusCode)
 	}
-	stream(ref)
+	stream(streamURL(ref))
 	if os.Getenv("CHECK_GAPPS") == "1" {
 		if out := adbShell(ref, "pm list packages com.android.vending"); !strings.Contains(out, "com.android.vending") {
 			log.Fatalf("Google Play is not installed: %q", out)
@@ -104,15 +110,18 @@ func main() {
 
 // stream opens the screen like the phone app does and checks real H.264 video arrives
 // and that input is accepted.
-func stream(ref string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
-	defer cancel()
+func streamURL(ref string) string {
 	exp := strconv.FormatInt(time.Now().Add(time.Minute).Unix(), 10)
 	payload := "v1." + ref + "." + exp
 	m := hmac.New(sha256.New, []byte(token))
 	m.Write([]byte(payload))
 	ticket := payload + "." + base64.RawURLEncoding.EncodeToString(m.Sum(nil))
-	wsURL := strings.Replace(nodeURL, "http", "ws", 1) + "/v1/stream/" + ref + "?ticket=" + ticket
+	return strings.Replace(nodeURL, "http", "ws", 1) + "/v1/stream/" + ref + "?ticket=" + ticket
+}
+
+func stream(wsURL string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
+	defer cancel()
 	ws, _, err := websocket.Dial(ctx, wsURL, nil)
 	must(err)
 	defer ws.CloseNow()
