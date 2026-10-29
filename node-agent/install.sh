@@ -3,6 +3,7 @@
 # Run as root:
 #   curl -fsSL https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/nuvola-cloudphone/node-agent/install.sh | sudo bash
 # Safe to run again: it keeps the node token and skips images that are already built.
+# It also works as a cloud-init (first boot) script; pass NODE_TOKEN to choose the token in advance.
 set -euo pipefail
 
 REPO_URL=${REPO_URL:-https://github.com/al3m6i89-mind-ai/mind-ai}
@@ -87,7 +88,7 @@ if [ "$MAX_DEVICES" = auto ]; then
     [ "$MAX_DEVICES" -ge 1 ] || MAX_DEVICES=1
 fi
 if [ ! -f "$DIR/node.env" ]; then
-    echo "NODE_TOKEN=$(openssl rand -hex 32)" > "$DIR/node.env"
+    echo "NODE_TOKEN=${NODE_TOKEN:-$(openssl rand -hex 32)}" > "$DIR/node.env"
 fi
 sed -i '/^MAX_DEVICES=/d' "$DIR/node.env"
 echo "MAX_DEVICES=$MAX_DEVICES" >> "$DIR/node.env"

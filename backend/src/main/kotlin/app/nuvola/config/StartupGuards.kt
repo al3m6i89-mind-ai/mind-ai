@@ -8,14 +8,14 @@ import org.springframework.stereotype.Component
 class StartupGuards(private val props: AppProperties) {
     @PostConstruct
     fun check() {
-        if (props.devices.provider == "redroid") {
+        if (props.devices.activeProvider == "redroid") {
             check(props.devices.redroid.nodeUrl.isNotBlank() && props.devices.redroid.nodeToken.length >= 32) {
                 "DEVICE_PROVIDER=redroid needs REDROID_NODE_URL and REDROID_NODE_TOKEN (printed by the node install script)"
             }
         }
         if (!props.isProduction) return
         val problems = buildList {
-            if (props.devices.provider == "mock") add("DEVICE_PROVIDER=mock is not allowed in production")
+            if (props.devices.activeProvider == "mock") add("DEVICE_PROVIDER=mock is not allowed in production")
             if (props.billing.allowUnpaidDevSubscriptions) add("unpaid dev subscriptions are not allowed in production")
             if (props.security.jwtSecret.startsWith("dev-only") || props.security.jwtSecret.length < 32) {
                 add("JWT_SECRET must be set to a random value of at least 32 characters")

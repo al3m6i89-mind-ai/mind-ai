@@ -38,7 +38,11 @@ data class AppProperties(
         val jobTimeout: Duration,
         val mockStepDelay: Duration,
         val redroid: Redroid = Redroid(),
-    )
+    ) {
+        /** "auto" uses the Redroid node once one is configured, and simulated phones until then. */
+        val activeProvider: String
+            get() = if (provider != "auto") provider else if (redroid.nodeUrl.isNotBlank()) "redroid" else "mock"
+    }
 
     /** One Redroid node (a server running the Nuvola node agent). */
     data class Redroid(

@@ -55,8 +55,8 @@ interface CloudDeviceProvider {
 class ProviderRegistry(providers: List<CloudDeviceProvider>, private val props: AppProperties) {
     private val byId = providers.associateBy { it.id }
 
-    fun active(): CloudDeviceProvider = byId[props.devices.provider]
-        ?: error("Unknown device provider '${props.devices.provider}'. Installed: ${byId.keys}")
+    fun active(): CloudDeviceProvider = byId[props.devices.activeProvider]
+        ?: error("Unknown device provider '${props.devices.activeProvider}'. Installed: ${byId.keys}")
 
     fun get(id: String): CloudDeviceProvider = byId[id] ?: error("Provider '$id' is not installed on this server")
 }
