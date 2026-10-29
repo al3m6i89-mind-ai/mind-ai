@@ -177,7 +177,6 @@
     <string name="live_connecting">جارٍ التحقق من الصلاحية وطلب جلسة آمنة…</string>
     <string name="live_unavailable_title">بث الشاشة غير متصل بعد</string>
     <string name="live_unavailable_body">هذا الخادم يدير الهواتف، لكن خدمة البث التي تعرض الشاشة وترسل لمساتك تُبنى في المرحلة القادمة. لن يُعرض أي شيء حتى يوجد اتصال حقيقي.</string>
-    <string name="live_session_ready">أصدر الخادم جلسة آمنة. عارض الشاشة يصل في التحديث القادم.</string>
 
     <string name="plans_title">الباقات</string>
     <string name="per_DAY">/ يوم</string>
@@ -296,4 +295,8 @@
     <string name="err_IDEMPOTENCY_KEY_REQUIRED">حدث خطأ أثناء إرسال الطلب. حاول مجددًا.</string>
     <string name="err_internal">حدث خطأ من جهتنا. الرقم المرجعي: %1$s</string>
     <string name="err_generic">حدث خطأ. حاول مجددًا.</string>
+    <string name="live_starting">جارٍ تشغيل الشاشة…</string>
+    <string name="live_ended">انقطع الاتصال بالهاتف.</string>
+    <string name="nav_home">الرئيسية</string>
+    <string name="nav_recents">التطبيقات الأخيرة</string>
 </resources>

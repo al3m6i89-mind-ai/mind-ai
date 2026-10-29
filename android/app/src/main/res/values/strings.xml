@@ -185,7 +185,6 @@
     <string name="live_connecting">Checking access and requesting a secure session…</string>
     <string name="live_unavailable_title">Screen streaming isn\'t connected yet</string>
     <string name="live_unavailable_body">This server can manage phones, but the streaming service that shows the screen and sends your touches is built in the next phase. Nothing is being shown until a real connection exists.</string>
-    <string name="live_session_ready">The server issued a secure session. The screen viewer arrives in the next update.</string>
 
     <!-- Plans and subscriptions -->
     <string name="plans_title">Plans</string>
@@ -308,4 +307,8 @@
     <string name="err_IDEMPOTENCY_KEY_REQUIRED">Something went wrong sending the request. Try again.</string>
     <string name="err_internal">Something went wrong on our side. Reference: %1$s</string>
     <string name="err_generic">Something went wrong. Try again.</string>
+    <string name="live_starting">Starting the screen…</string>
+    <string name="live_ended">The connection to the phone ended.</string>
+    <string name="nav_home">Home</string>
+    <string name="nav_recents">Recent apps</string>
 </resources>

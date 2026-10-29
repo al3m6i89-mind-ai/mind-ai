@@ -1,6 +1,22 @@
 package app.nuvola.cloudphone.ui.screens
 
 import android.app.Application
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.Surface
+import android.view.SurfaceHolder
+import android.view.SurfaceView
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.material.icons.automirrored.outlined.ArrowBack
+import androidx.compose.material.icons.outlined.Circle
+import androidx.compose.material.icons.outlined.CropSquare
+import androidx.compose.material3.IconButton
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.viewinterop.AndroidView
+import app.nuvola.cloudphone.data.PhoneStream
+import java.net.URLEncoder
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
@@ -269,77 +285,172 @@ private fun RenameDialog(current: String, onDismiss: () -> Unit, onSave: (String
 
 sealed interface LiveState {
     data object Connecting : LiveState
-    data class Ready(val session: StreamSession) : LiveState
+    /** Session issued and the phone's video is starting or playing. */
+    data class Live(val session: StreamSession, val playing: Boolean) : LiveState
     data class Failed(val error: AppError) : LiveState
+    data object Ended : LiveState
 }
 
 /**
- * Asks the server for a short-lived stream session. The video and touch client is built in phase 4;
- * until then this screen reports exactly what the server answered and shows no fake screen.
+ * Opens a short-lived session on the server (which checks ownership, subscription and limits),
+ * then connects straight to the phone's node for video and touch. The stream is closed while the
+ * app is in the background and reopened with a fresh session on return.
  */
 class LiveVm(app: Application, handle: SavedStateHandle) : BaseVm(app) {
     private val deviceId: String = checkNotNull(handle["deviceId"])
     val state = MutableStateFlow<LiveState>(LiveState.Connecting)
-
-    init { connect() }
+    val videoSize = MutableStateFlow<Pair<Int, Int>?>(null)
+    var stream: PhoneStream? = null
+        private set
+    private var surface: Surface? = null
+    private var generation = 0
 
     fun connect() {
+        disconnect()
         state.value = LiveState.Connecting
+        val gen = ++generation
         viewModelScope.launch {
-            state.value = when (val r = call { api.openSession(deviceId) }) {
-                is ApiResult.Ok -> LiveState.Ready(r.value)
-                is ApiResult.Failed -> LiveState.Failed(r.error)
+            when (val r = call { api.openSession(deviceId) }) {
+                is ApiResult.Failed -> state.value = LiveState.Failed(r.error)
+                is ApiResult.Ok -> {
+                    val session = r.value
+                    val url = session.gatewayUrl + "?ticket=" + URLEncoder.encode(session.token, "UTF-8")
+                    if (gen != generation) { // the screen was left while the session was opening
+                        nuvola.appScope.launch { call { api.closeSession(session.sessionId) } }
+                        return@launch
+                    }
+                    // Callbacks from an older stream (closed by a reconnect) are ignored.
+                    val s = PhoneStream(url, object : PhoneStream.Listener {
+                        override fun onVideoSize(width: Int, height: Int) { if (gen == generation) videoSize.value = width to height }
+                        override fun onFirstFrame() { if (gen == generation) state.value = LiveState.Live(session, playing = true) }
+                        override fun onEnded(failed: Boolean) { if (gen == generation) state.value = LiveState.Ended }
+                    })
+                    stream = s
+                    state.value = LiveState.Live(session, playing = false)
+                    s.start()
+                    surface?.let(s::attachSurface)
+                }
             }
         }
     }
 
-    fun close() {
-        val s = (state.value as? LiveState.Ready)?.session ?: return
+    fun disconnect() {
+        generation++
+        stream?.close()
+        stream = null
+        val s = (state.value as? LiveState.Live)?.session ?: return
+        state.value = LiveState.Ended
         // Fire and forget on the app scope so the server ends the session even as this screen closes.
         nuvola.appScope.launch { call { api.closeSession(s.sessionId) } }
     }
 
-    override fun onCleared() { close() }
+    fun surfaceReady(s: Surface?) {
+        surface = s
+        if (s != null) stream?.attachSurface(s) else stream?.detachSurface()
+    }
+
+    override fun onCleared() { disconnect() }
 }
 
 @Composable
 fun LiveScreen(onBack: () -> Unit, vm: LiveVm = viewModel()) {
     val state by vm.state.collectAsState()
+    LifecycleResumeEffect(Unit) {
+        vm.connect()
+        onPauseOrDispose { vm.disconnect() }
+    }
     Scaffold(topBar = { BackTopBar(stringResource(R.string.open_phone), onBack) }) { padding ->
-        Column(
-            Modifier.padding(padding).fillMaxSize().padding(32.dp),
-            verticalArrangement = Arrangement.Center,
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            when (val s = state) {
-                LiveState.Connecting -> {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.size(12.dp))
-                    Text(stringResource(R.string.live_connecting), textAlign = TextAlign.Center)
-                }
-                is LiveState.Ready -> {
-                    Text(stringResource(R.string.live_session_ready), textAlign = TextAlign.Center)
-                    Spacer(Modifier.size(12.dp))
-                    FilledTonalButton(onClick = onBack) { Text(stringResource(R.string.close)) }
-                }
-                is LiveState.Failed -> {
-                    Icon(Icons.Outlined.LinkOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Spacer(Modifier.size(12.dp))
-                    if (s.error.code == "STREAMING_NOT_AVAILABLE") {
-                        Text(stringResource(R.string.live_unavailable_title), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
-                        Spacer(Modifier.size(6.dp))
-                        Text(stringResource(R.string.live_unavailable_body), textAlign = TextAlign.Center,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        Text(errorText(s.error), textAlign = TextAlign.Center)
+        when (val s = state) {
+            is LiveState.Live -> PhoneScreen(vm, s.playing, Modifier.padding(padding))
+            else -> Column(
+                Modifier.padding(padding).fillMaxSize().padding(32.dp),
+                verticalArrangement = Arrangement.Center,
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                when (s) {
+                    LiveState.Connecting -> {
+                        CircularProgressIndicator()
+                        Spacer(Modifier.size(12.dp))
+                        Text(stringResource(R.string.live_connecting), textAlign = TextAlign.Center)
                     }
-                    Spacer(Modifier.size(16.dp))
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedButton(onClick = onBack) { Text(stringResource(R.string.back)) }
-                        Button(onClick = vm::connect) { Text(stringResource(R.string.retry)) }
+                    else -> {
+                        Icon(Icons.Outlined.LinkOff, null, Modifier.size(48.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.size(12.dp))
+                        val error = (s as? LiveState.Failed)?.error
+                        if (error?.code == "STREAMING_NOT_AVAILABLE") {
+                            Text(stringResource(R.string.live_unavailable_title), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
+                            Spacer(Modifier.size(6.dp))
+                            Text(stringResource(R.string.live_unavailable_body), textAlign = TextAlign.Center,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        } else {
+                            Text(if (error != null) errorText(error) else stringResource(R.string.live_ended), textAlign = TextAlign.Center)
+                        }
+                        Spacer(Modifier.size(16.dp))
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedButton(onClick = onBack) { Text(stringResource(R.string.back)) }
+                            Button(onClick = vm::connect) { Text(stringResource(R.string.retry)) }
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/** The phone's screen, scaled to fit, with touch forwarding and the Android navigation keys. */
+@Composable
+private fun PhoneScreen(vm: LiveVm, playing: Boolean, modifier: Modifier) {
+    val size by vm.videoSize.collectAsState()
+    val ratio = size?.let { it.first.toFloat() / it.second } ?: (9f / 16f)
+    Column(modifier.fillMaxSize().background(Color.Black)) {
+        Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
+            AndroidView(
+                modifier = Modifier.aspectRatio(ratio, matchHeightConstraintsFirst = true),
+                factory = { ctx ->
+                    SurfaceView(ctx).apply {
+                        holder.addCallback(object : SurfaceHolder.Callback {
+                            override fun surfaceCreated(h: SurfaceHolder) = vm.surfaceReady(h.surface)
+                            override fun surfaceChanged(h: SurfaceHolder, f: Int, w: Int, hh: Int) {}
+                            override fun surfaceDestroyed(h: SurfaceHolder) = vm.surfaceReady(null)
+                        })
+                        setOnTouchListener { v, e -> forwardTouch(vm.stream, v.width, v.height, e); true }
+                    }
+                },
+            )
+            if (!playing) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.size(12.dp))
+                    Text(stringResource(R.string.live_starting), color = Color.White)
+                }
+            }
+        }
+        Row(Modifier.fillMaxWidth().padding(vertical = 4.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+            IconButton(onClick = { vm.stream?.key(KeyEvent.KEYCODE_BACK) }) {
+                Icon(Icons.AutoMirrored.Outlined.ArrowBack, stringResource(R.string.back), tint = Color.White)
+            }
+            IconButton(onClick = { vm.stream?.key(KeyEvent.KEYCODE_HOME) }) {
+                Icon(Icons.Outlined.Circle, stringResource(R.string.nav_home), tint = Color.White)
+            }
+            IconButton(onClick = { vm.stream?.key(KeyEvent.KEYCODE_APP_SWITCH) }) {
+                Icon(Icons.Outlined.CropSquare, stringResource(R.string.nav_recents), tint = Color.White)
+            }
+        }
+    }
+}
+
+/** Maps view pixels to phone pixels and sends each pointer as its own DOWN, MOVE or UP. */
+private fun forwardTouch(stream: PhoneStream?, viewW: Int, viewH: Int, e: MotionEvent) {
+    stream ?: return
+    if (viewW == 0 || viewH == 0) return
+    fun send(action: Int, i: Int) = stream.touch(
+        action, e.getPointerId(i).toLong(),
+        (e.getX(i) * stream.videoWidth / viewW).toInt(), (e.getY(i) * stream.videoHeight / viewH).toInt(),
+    )
+    when (e.actionMasked) {
+        MotionEvent.ACTION_DOWN, MotionEvent.ACTION_POINTER_DOWN -> send(MotionEvent.ACTION_DOWN, e.actionIndex)
+        MotionEvent.ACTION_UP, MotionEvent.ACTION_POINTER_UP -> send(MotionEvent.ACTION_UP, e.actionIndex)
+        MotionEvent.ACTION_MOVE -> for (i in 0 until e.pointerCount) send(MotionEvent.ACTION_MOVE, i)
+        MotionEvent.ACTION_CANCEL -> for (i in 0 until e.pointerCount) send(MotionEvent.ACTION_UP, i)
     }
 }
