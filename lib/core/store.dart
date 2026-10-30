@@ -260,6 +260,8 @@ class AppStore extends ChangeNotifier {
             reply.text = '';
           case AiVia(:final name):
             reply.via = name;
+          case AiTrace(:final line):
+            reply.trace.add(line);
           case AiStatus(:final code, :final name):
             reply.note = code == 'switching' ? 'switching:$name' : code;
         }

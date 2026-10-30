@@ -37,6 +37,12 @@ class AiStatus extends AiEvent {
   final String? name;
 }
 
+/// One server that failed and why, kept with the reply so problems can be diagnosed.
+class AiTrace extends AiEvent {
+  AiTrace(this.line);
+  final String line;
+}
+
 const _system = '''
 You are the assistant of a file and image reading app. People rely on your answers about their own documents (invoices, contracts, reports, spreadsheets, photos), so accuracy matters more than anything else. Reply in the language the user writes in (Arabic or English), clearly and without filler.
 
@@ -65,8 +71,11 @@ class Attempt {
 
 /// Why one attempt failed, and what that means for the next ones.
 class _Fail implements Exception {
-  _Fail(this.code, {this.retryable = false, this.backendDead = false, this.replacement});
+  _Fail(this.code, {this.retryable = false, this.backendDead = false, this.replacement, this.detail});
   final String code;
+
+  /// The server's own words, for the trace.
+  final String? detail;
 
   /// Busy, rate limited or a network drop: worth trying again later.
   final bool retryable;
@@ -101,7 +110,7 @@ class AiClient {
     this.geminiModel = defaultGeminiModel,
     this.onModelChanged,
     this.endpoints = const Endpoints(),
-    this.roundPauses = const [Duration(seconds: 3), Duration(seconds: 8)],
+    this.roundPauses = const [Duration(seconds: 4), Duration(seconds: 12), Duration(seconds: 25)],
   });
 
   /// Google's alias for its current Flash model, so the app keeps working when
@@ -132,8 +141,17 @@ class AiClient {
         const Attempt(Backend.free, 'openai', 'الخادم المجاني'),
       ];
 
+  /// True when a file can only be read by Gemini (a scanned PDF has no text layer).
+  static bool needsGemini(Conversation conv) =>
+      conv.attachments.any((a) => a.isPdf && (a.extractedText ?? '').trim().isEmpty);
+
   Stream<AiEvent> reply(Conversation conv) async* {
-    final attempts = chain();
+    var attempts = chain();
+    // Accuracy before speed: a server that cannot read the file would only answer
+    // "not found", so keep trying Gemini instead.
+    if (geminiKey.trim().isNotEmpty && needsGemini(conv)) {
+      attempts = attempts.where((a) => a.backend == Backend.gemini).toList();
+    }
     final dead = <String>{};
     final deadBackends = <Backend>{};
     String? lastError;
@@ -160,6 +178,8 @@ class AiClient {
           return;
         } on _Fail catch (f) {
           lastError = f.code;
+          final d = f.detail == null ? '' : ' — ${f.detail}';
+          yield AiTrace('${a.model}: ${f.code}$d');
           if (f.code == 'blocked') throw AiException('blocked');
           if (f.backendDead) deadBackends.add(a.backend);
           if (!f.retryable) dead.add('$a');
@@ -210,7 +230,7 @@ class AiClient {
     try {
       final http.StreamedResponse res;
       try {
-        res = await client.send(req).timeout(const Duration(seconds: 120));
+        res = await client.send(req).timeout(const Duration(seconds: 60));
       } on TimeoutException {
         throw _Fail('timeout', retryable: true);
       } on SocketException {
@@ -230,7 +250,8 @@ class AiClient {
         return;
       }
       var buffer = '';
-      await for (final chunk in res.stream.transform(utf8.decoder)) {
+      // A stream that goes quiet for too long is treated as a dropped server.
+      await for (final chunk in res.stream.timeout(const Duration(seconds: 90)).transform(utf8.decoder)) {
         buffer += chunk;
         final lines = buffer.split('\n');
         buffer = lines.removeLast();
@@ -246,7 +267,7 @@ class AiClient {
           } catch (_) {
             continue;
           }
-          if (j['error'] != null) throw _Fail('busy', retryable: true);
+          if (j['error'] != null) throw _Fail('busy', retryable: true, detail: _short('${j['error']['message'] ?? j['error']}'));
           if (a.backend == Backend.gemini) {
             final cand = (j['candidates'] as List?)?.firstOrNull as Map<String, dynamic>?;
             for (final p in (cand?['content']?['parts'] as List?) ?? const []) {
@@ -277,17 +298,22 @@ class AiClient {
     try {
       msg = (jsonDecode(body)['error']?['message'] as String?) ?? body;
     } catch (_) {}
+    final detail = 'HTTP $code ${_short(msg)}';
     if (code == 401 || code == 403 || (code == 400 && msg.contains('API key'))) {
-      return _Fail(a.backend == Backend.mistral ? 'badMistralKey' : 'badKey', backendDead: true);
+      return _Fail(a.backend == Backend.mistral ? 'badMistralKey' : 'badKey', backendDead: true, detail: detail);
     }
     if (code == 404 && a.backend == Backend.gemini) {
-      return _Fail('busy', replacement: replacementModel(msg, {a.model}));
+      return _Fail('busy', replacement: replacementModel(msg, {a.model}), detail: detail);
     }
-    if (code == 429) return _Fail('rateLimited', retryable: true);
-    if (code >= 500) return _Fail('busy', retryable: true);
-    if (code == 413) return _Fail('tooLargeTotal');
-    if (msg.length > 300) msg = msg.substring(0, 300);
-    return _Fail('HTTP $code: $msg');
+    if (code == 429) return _Fail('rateLimited', retryable: true, detail: detail);
+    if (code >= 500) return _Fail('busy', retryable: true, detail: detail);
+    if (code == 413) return _Fail('tooLargeTotal', detail: detail);
+    return _Fail('HTTP $code: ${_short(msg)}', detail: detail);
+  }
+
+  static String _short(String s) {
+    final one = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+    return one.length > 160 ? '${one.substring(0, 160)}…' : one;
   }
 
   /// The successor Google names in a "model retired" message, if any.

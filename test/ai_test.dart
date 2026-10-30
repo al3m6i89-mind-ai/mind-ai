@@ -104,6 +104,8 @@ Future<(String, List<String>)> run(AiClient ai, Conversation c) async {
         events.add('via:$name');
       case AiStatus(:final code, :final name):
         events.add(name == null ? code : '$code:$name');
+      case AiTrace():
+        break;
     }
     if (e is AiText) text += e.text;
     if (e is AiReset) text = '';
@@ -223,6 +225,27 @@ void main() {
     final (text, _) = await run(ai, conv());
     expect(text, 'ok from gemini:gemini-9-flash');
     expect(saved, 'gemini-9-flash');
+    await f.stop();
+  });
+
+  test('a scanned PDF stays with Gemini instead of a server that cannot read it', () async {
+    final f = FakeAi({
+      'gemini:gemini-flash-latest': [503, 503],
+      'gemini:gemini-pro-latest': [503, 503],
+      'gemini:gemini-flash-lite-latest': [503],
+    });
+    await f.start();
+    final pdf = File('${(await Directory.systemTemp.createTemp()).path}/s.pdf')..writeAsStringSync('%PDF-1.4');
+    final ai = AiClient(geminiKey: 'k', mistralKey: 'm', endpoints: f.endpoints, roundPauses: noWait);
+    final traces = <String>[];
+    var text = '';
+    await for (final e in ai.reply(conv(files: [Attachment(id: 's', name: 's.pdf', ext: 'pdf', size: 8, path: pdf.path)]))) {
+      if (e is AiTrace) traces.add(e.line);
+      if (e is AiText) text += e.text;
+    }
+    expect(text, 'ok from gemini:gemini-flash-lite-latest');
+    expect(f.calls.where((c) => !c.startsWith('gemini')), isEmpty);
+    expect(traces.first, startsWith('gemini-flash-latest: busy — HTTP 503'));
     await f.stop();
   });
 }
