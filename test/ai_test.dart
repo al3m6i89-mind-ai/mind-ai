@@ -84,4 +84,24 @@ void main() {
     await expectLater(ai.reply(conv()).join(), throwsA(isA<AiException>().having((e) => e.message, 'code', 'busy')));
     await server.close(force: true);
   });
+
+  test('a dropped connection is retried once', () async {
+    var first = true;
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    server.listen((req) async {
+      if (first) {
+        first = false;
+        // Cut the connection without answering.
+        (await req.response.detachSocket(writeHeaders: false)).destroy();
+        return;
+      }
+      await utf8.decodeStream(req);
+      req.response.headers.contentType = ContentType('text', 'event-stream');
+      req.response.write('data: {"candidates":[{"content":{"parts":[{"text":"back"}]}}]}\n\n');
+      await req.response.close();
+    });
+    final ai = AiClient(provider: Provider.gemini, geminiKey: 'k', baseUrl: 'http://127.0.0.1:${server.port}');
+    expect(await ai.reply(conv()).join(), 'back');
+    await server.close(force: true);
+  });
 }

@@ -126,6 +126,7 @@ class AiClient {
       var current = model;
       String? replacement;
       var retriedBusy = false;
+      var retriedNetwork = false;
       late http.StreamedResponse res;
       while (true) {
         tried.add(current);
@@ -133,7 +134,16 @@ class AiClient {
         final req = http.Request('POST', Uri.parse(url))
           ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim()})
           ..body = body;
-        res = await client.send(req).timeout(const Duration(seconds: 120));
+        try {
+          res = await client.send(req).timeout(const Duration(seconds: 120));
+        } on http.ClientException {
+          // A dropped connection (switching Wi-Fi/mobile data, brief signal loss): try once more.
+          if (retriedNetwork) rethrow;
+          retriedNetwork = true;
+          tried.remove(current);
+          await Future<void>.delayed(const Duration(milliseconds: 1500));
+          continue;
+        }
         if (res.statusCode < 400) break;
         final err = await res.stream.bytesToString();
         final code = res.statusCode;
@@ -184,6 +194,8 @@ class AiClient {
       throw AiException('timeout');
     } on SocketException {
       throw AiException('offline');
+    } on http.ClientException {
+      throw AiException('network');
     } finally {
       client.close();
     }
@@ -261,6 +273,8 @@ class AiClient {
       throw AiException('timeout');
     } on SocketException {
       throw AiException('offline');
+    } on http.ClientException {
+      throw AiException('network');
     } finally {
       client.close();
     }
