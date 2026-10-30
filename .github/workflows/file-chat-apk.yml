@@ -27,7 +27,8 @@ jobs:
       - run: flutter pub get
       - run: flutter analyze
       - run: flutter test
-      - run: flutter build apk --release --build-number=${{ github.run_number }}
+      # 64-bit ARM only: every current Android phone, at about a third of the size.
+      - run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
       # The release key is kept by the owner, not in this public repo: the unsigned APK is
       # committed to dist/ and signed outside CI.
       - name: Commit unsigned APK
