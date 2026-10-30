@@ -33,11 +33,14 @@ When nothing is attached, answer normally as a helpful assistant, and say so if 
 /// Streams a reply. Gemini reads PDFs and images itself; extracted text from
 /// Word, Excel and PowerPoint is sent as text.
 class AiClient {
-  AiClient({required this.provider, required this.geminiKey, this.model = defaultGeminiModel, this.onModelChanged});
+  AiClient({required this.provider, required this.geminiKey, this.model = defaultGeminiModel, this.onModelChanged, this.baseUrl = 'https://generativelanguage.googleapis.com'});
 
   /// Google's alias for its current Flash model, so the app keeps working when
   /// older versions are retired.
   static const defaultGeminiModel = 'gemini-flash-latest';
+
+  /// Lighter models tried when the main one is overloaded or out of free quota.
+  static const backupModels = ['gemini-flash-lite-latest', 'gemini-2.5-flash-lite'];
 
   final Provider provider;
   final String geminiKey;
@@ -45,6 +48,9 @@ class AiClient {
 
   /// Called when Google retired [model] and another one answered instead.
   final void Function(String model)? onModelChanged;
+
+  /// Overridden in tests.
+  final String baseUrl;
 
   static const maxInlineBytes = 18 * 1024 * 1024;
 
@@ -112,25 +118,41 @@ class AiClient {
     });
     final client = http.Client();
     try {
-      // A retired model answers 404, often naming its replacement; try that, then the
-      // alias, before giving up. Nothing has been shown yet, so retrying is safe.
+      // Nothing has been shown yet, so retrying is safe:
+      // - 404: the model was retired; try the one Google names, then the alias, and remember it.
+      // - 5xx (overloaded): retry once after a pause, then fall back to a lighter model.
+      // - 429 (this model's free quota is used up): fall back to a lighter model, which has its own quota.
       final tried = <String>{};
       var current = model;
+      String? replacement;
+      var retriedBusy = false;
       late http.StreamedResponse res;
       while (true) {
         tried.add(current);
-        final url = 'https://generativelanguage.googleapis.com/v1beta/models/$current:streamGenerateContent?alt=sse';
+        final url = '$baseUrl/v1beta/models/$current:streamGenerateContent?alt=sse';
         final req = http.Request('POST', Uri.parse(url))
           ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim()})
           ..body = body;
         res = await client.send(req).timeout(const Duration(seconds: 120));
         if (res.statusCode < 400) break;
         final err = await res.stream.bytesToString();
-        final next = res.statusCode == 404 ? replacementModel(err, tried) : null;
-        if (next == null) throw AiException(_friendly(res.statusCode, err));
+        final code = res.statusCode;
+        String? next;
+        if (code == 404) {
+          next = replacementModel(err, tried);
+          replacement = next;
+        } else if (code >= 500 && !retriedBusy) {
+          retriedBusy = true;
+          await Future<void>.delayed(const Duration(seconds: 2));
+          next = current;
+          tried.remove(current);
+        } else if (code >= 500 || code == 429) {
+          next = backupModels.where((m) => !tried.contains(m)).firstOrNull;
+        }
+        if (next == null) throw AiException(code >= 500 ? 'busy' : _friendly(code, err));
         current = next;
       }
-      if (current != model) onModelChanged?.call(current);
+      if (replacement != null && current == replacement) onModelChanged?.call(current);
       var buffer = '';
       await for (final chunk in res.stream.transform(utf8.decoder)) {
         buffer += chunk;
