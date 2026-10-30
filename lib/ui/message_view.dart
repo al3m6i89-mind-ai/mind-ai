@@ -101,7 +101,16 @@ class MessageView extends StatelessWidget {
         ]),
         const SizedBox(height: 6),
         if (waiting)
-          const Padding(padding: EdgeInsets.symmetric(vertical: 8), child: _TypingDots())
+          Padding(
+            padding: const EdgeInsets.symmetric(vertical: 8),
+            child: Row(children: [
+              const _TypingDots(),
+              if (m.note != null) ...[
+                const SizedBox(width: 10),
+                Flexible(child: Text(_note(m.note!), style: TextStyle(color: context.muted, fontSize: 13))),
+              ],
+            ]),
+          )
         else if (m.text.isNotEmpty)
           MarkdownBody(
             data: m.status == MsgStatus.streaming ? '${m.text} ▍' : m.text,
@@ -142,6 +151,11 @@ class MessageView extends StatelessWidget {
           ),
         if (m.status != MsgStatus.streaming)
           Row(children: [
+            if (m.via != null && m.status == MsgStatus.complete)
+              Padding(
+                padding: const EdgeInsetsDirectional.only(end: 4),
+                child: Text(s.t('via', {'name': m.via!}), style: TextStyle(color: context.muted, fontSize: 12)),
+              ),
             if (m.text.isNotEmpty)
               IconButton(
                 tooltip: s.t('copy'),
@@ -159,6 +173,11 @@ class MessageView extends StatelessWidget {
           ]),
       ],
     );
+  }
+
+  String _note(String note) {
+    if (note.startsWith('switching:')) return s.t('switching', {'name': note.substring(10)});
+    return s.t('waitingRetry');
   }
 
   void _copy(BuildContext context) {

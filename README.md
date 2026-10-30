@@ -46,3 +46,8 @@ keyPassword=كلمة المرور
 apksigner sign --ks filechat-release.jks --ks-key-alias filechat --out file-chat.apk dist/file-chat-unsigned.apk
 ```
 لإصدار تحديث ارفع رقم `version` في `pubspec.yaml` (مثلاً `1.0.1+2`).
+
+## الخوادم الاحتياطية (لا فشل عند الضغط)
+يجرّب التطبيق بالترتيب: Gemini Flash ← Gemini Pro ← Gemini Flash-Lite ← Mistral (إن أُضيف مفتاحه) ← خادم مجاني بلا مفتاح.
+عند انشغال خادم ينتقل فوراً للتالي، وإذا انشغلت كلها ينتظر ثم يعيد جولة كاملة (حتى 3 جولات).
+نص ملفات PDF يُستخرج على الهاتف صفحةً صفحة (مكتبة Syncfusion PDF، رخصة Community) حتى تستطيع الخوادم البديلة الإجابة منه مع ذكر الصفحة.

@@ -6,6 +6,7 @@ import 'package:file_chat/core/ai.dart';
 import 'package:file_chat/core/extract.dart';
 import 'package:file_chat/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 Uint8List zip(Map<String, String> files) {
   final a = Archive();
@@ -109,11 +110,23 @@ void main() {
     expect(back.matches('غير موجود'), isFalse);
   });
 
-  test('retired Gemini model falls over to the named replacement, then the alias', () {
-    const err = '{"error":{"code":404,"message":"This model models/gemini-2.5-flash is no longer available to new users. '
-        'Please update your code to use models/gemini-3.8-flash for the latest features."}}';
+  test('retired Gemini model: the successor named in the error', () {
+    const err = 'This model models/gemini-2.5-flash is no longer available. Please use models/gemini-3.8-flash.';
     expect(AiClient.replacementModel(err, {'gemini-2.5-flash'}), 'gemini-3.8-flash');
-    expect(AiClient.replacementModel(err, {'gemini-2.5-flash', 'gemini-3.8-flash'}), AiClient.defaultGeminiModel);
-    expect(AiClient.replacementModel('not found', {AiClient.defaultGeminiModel}), isNull);
+    expect(AiClient.replacementModel('not found', {'x'}), isNull);
+  });
+
+  test('pdf text is read page by page', () async {
+    final doc = PdfDocument();
+    for (final t in ['Invoice No 77', 'Total 1250 SAR']) {
+      doc.pages.add().graphics.drawString(t, PdfStandardFont(PdfFontFamily.helvetica, 12));
+    }
+    final bytes = Uint8List.fromList(await doc.save());
+    doc.dispose();
+    expect(validateBytes('pdf', bytes), isNull);
+    final t = extractText('pdf', bytes).text!;
+    expect(t, contains('Page 1'));
+    expect(t.indexOf('Invoice No 77'), lessThan(t.indexOf('Page 2')));
+    expect(t.indexOf('Page 2'), lessThan(t.indexOf('Total 1250 SAR')));
   });
 }

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -36,7 +37,7 @@ class AppStore extends ChangeNotifier {
   final List<Attachment> pending = [];
   int processing = 0;
 
-  StreamSubscription<String>? _stream;
+  StreamSubscription<AiEvent>? _stream;
   Completer<void>? _done;
   bool get streaming => _stream != null;
 
@@ -67,12 +68,10 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Gemini when a key is saved, unless the user picked the no-key mode.
-  Provider get provider =>
-      Provider.values.asNameMap()[_prefs.getString('provider')] ??
-      (geminiKey.isEmpty ? Provider.pollinations : Provider.gemini);
-  Future<void> setProvider(Provider p) async {
-    await _prefs.setString('provider', p.name);
+  /// Optional backup server, used when Gemini is busy.
+  String get mistralKey => _prefs.getString('mistralKey') ?? '';
+  Future<void> setMistralKey(String v) async {
+    await _prefs.setString('mistralKey', v.trim());
     notifyListeners();
   }
 
@@ -181,7 +180,7 @@ class AppStore extends ChangeNotifier {
       final file = File('${dir.path}/$id.$ext');
       await file.writeAsBytes(bytes, flush: true);
       // Office text extraction can take a moment on big files; keep the UI responsive.
-      final result = await Future(() => extractText(ext, bytes));
+      final result = await Isolate.run(() => extractText(ext, bytes));
       pending.add(Attachment(
         id: id,
         name: name,
@@ -240,40 +239,41 @@ class AppStore extends ChangeNotifier {
     conv.updatedAt = DateTime.now();
     _sort();
     final client = AiClient(
-      provider: provider,
       geminiKey: geminiKey,
-      model: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
+      mistralKey: mistralKey,
+      geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
       onModelChanged: (m) => _prefs.setString('geminiModel', m),
     );
-    late final Stream<String> stream;
-    try {
-      // The history is built before the placeholder reply is added.
-      stream = client.reply(conv);
-    } on AiException catch (e) {
-      reply
-        ..status = MsgStatus.error
-        ..error = e.message;
-      conv.messages.add(reply);
-      await _save(conv);
-      notifyListeners();
-      return;
-    }
+    final stream = client.reply(conv);
     conv.messages.add(reply);
     notifyListeners();
 
     final done = _done = Completer<void>();
     _stream = stream.listen(
-      (chunk) {
-        reply.text += chunk;
+      (event) {
+        switch (event) {
+          case AiText(:final text):
+            reply
+              ..text += text
+              ..note = null;
+          case AiReset():
+            reply.text = '';
+          case AiVia(:final name):
+            reply.via = name;
+          case AiStatus(:final code, :final name):
+            reply.note = code == 'switching' ? 'switching:$name' : code;
+        }
         notifyListeners();
       },
       onError: (Object e) {
+        reply.note = null;
         reply
           ..status = MsgStatus.error
           ..error = e is AiException ? e.message : e.toString();
         if (!done.isCompleted) done.complete();
       },
       onDone: () {
+        reply.note = null;
         if (reply.status == MsgStatus.streaming) reply.status = MsgStatus.complete;
         if (!done.isCompleted) done.complete();
       },

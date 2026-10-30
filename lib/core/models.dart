@@ -83,6 +83,7 @@ class Message {
     required this.text,
     this.status = MsgStatus.complete,
     this.error,
+    this.via,
     List<Attachment>? attachments,
     DateTime? time,
   })  : attachments = attachments ?? [],
@@ -93,6 +94,12 @@ class Message {
   String text;
   MsgStatus status;
   String? error;
+
+  /// The server that wrote this reply (Gemini, Mistral, ...).
+  String? via;
+
+  /// Live progress while servers are busy; not saved.
+  String? note;
   final List<Attachment> attachments;
   final DateTime time;
 
@@ -102,6 +109,7 @@ class Message {
         'text': text,
         'status': status.name,
         if (error != null) 'error': error,
+        if (via != null) 'via': via,
         'attachments': attachments.map((a) => a.toJson()).toList(),
         'time': time.toIso8601String(),
       };
@@ -112,6 +120,7 @@ class Message {
         text: j['text'] as String? ?? '',
         status: MsgStatus.values.asNameMap()[j['status']] ?? MsgStatus.complete,
         error: j['error'] as String?,
+        via: j['via'] as String?,
         attachments: [
           for (final a in (j['attachments'] as List? ?? const [])) Attachment.fromJson(a as Map<String, dynamic>),
         ],

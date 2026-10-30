@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart' hide Provider;
+import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../core/ai.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
 import 'theme.dart';
@@ -16,30 +15,58 @@ class SettingsScreen extends StatefulWidget {
 
 class _SettingsScreenState extends State<SettingsScreen> {
   late final TextEditingController _key;
+  late final TextEditingController _mistral;
   bool _show = false;
 
   @override
   void initState() {
     super.initState();
     _key = TextEditingController(text: context.read<AppStore>().geminiKey);
+    _mistral = TextEditingController(text: context.read<AppStore>().mistralKey);
   }
 
   @override
   void dispose() {
     _key.dispose();
+    _mistral.dispose();
     super.dispose();
   }
 
   Future<void> _saveKey(AppStore store, S s) async {
     await store.setGeminiKey(_key.text);
-    // Saving a key means the user wants Gemini.
-    if (_key.text.trim().isNotEmpty) await store.setProvider(Provider.gemini);
+    await store.setMistralKey(_mistral.text);
     if (!mounted) return;
     FocusScope.of(context).unfocus();
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(s.t('keySaved')), behavior: SnackBarBehavior.floating));
   }
+
+  Widget _keyField(TextEditingController c, String hint, AppStore store, S s) => TextField(
+        controller: c,
+        obscureText: !_show,
+        autocorrect: false,
+        enableSuggestions: false,
+        textDirection: TextDirection.ltr,
+        decoration: InputDecoration(
+          hintText: hint,
+          suffixIcon: IconButton(
+            tooltip: s.t('showKey'),
+            icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+            onPressed: () => setState(() => _show = !_show),
+          ),
+        ),
+        onSubmitted: (_) => _saveKey(store, s),
+      );
+
+  Widget _link(String label, String url) => Align(
+        alignment: AlignmentDirectional.centerStart,
+        child: TextButton.icon(
+          icon: const Icon(Icons.open_in_new, size: 18),
+          label: Text(label),
+          onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -67,59 +94,33 @@ class _SettingsScreenState extends State<SettingsScreen> {
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
           children: [
-            section(s.t('providerTitle'), [
-              RadioGroup<Provider>(
-                groupValue: store.provider,
-                onChanged: (v) {
-                  if (v != null) store.setProvider(v);
-                },
-                child: Column(children: [
-                  RadioListTile<Provider>(value: Provider.gemini, title: Text(s.t('gemini')), contentPadding: EdgeInsets.zero),
-                  RadioListTile<Provider>(
-                      value: Provider.pollinations, title: Text(s.t('pollinations')), contentPadding: EdgeInsets.zero),
+            section(s.t('geminiKey'), [
+              _keyField(_key, 'AIza...', store, s),
+              const SizedBox(height: 8),
+              Text(s.t('keyHint'), style: TextStyle(color: context.muted, fontSize: 13)),
+              _link(s.t('getKey'), 'https://aistudio.google.com/apikey'),
+            ]),
+            section(s.t('mistralKey'), [
+              _keyField(_mistral, '', store, s),
+              const SizedBox(height: 8),
+              Text(s.t('mistralHint'), style: TextStyle(color: context.muted, fontSize: 13)),
+              _link(s.t('getMistralKey'), 'https://console.mistral.ai/api-keys'),
+            ]),
+            Padding(
+              padding: const EdgeInsets.only(bottom: 22),
+              child: FilledButton(onPressed: () => _saveKey(store, s), child: Text(s.t('save'))),
+            ),
+            section(s.t('chainTitle'), [
+              Container(
+                padding: const EdgeInsets.all(14),
+                decoration: BoxDecoration(color: context.surface2, borderRadius: BorderRadius.circular(14)),
+                child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Icon(Icons.alt_route_rounded, color: primary, size: 20),
+                  const SizedBox(width: 10),
+                  Expanded(child: Text(s.t('chainText'), style: const TextStyle(height: 1.55, fontSize: 13.5))),
                 ]),
               ),
             ]),
-            AnimatedSize(
-              duration: const Duration(milliseconds: 220),
-              curve: Curves.easeOutCubic,
-              child: store.provider != Provider.gemini
-                  ? const SizedBox(width: double.infinity)
-                  : section(s.t('geminiKey'), [
-                      TextField(
-                        controller: _key,
-                        obscureText: !_show,
-                        autocorrect: false,
-                        enableSuggestions: false,
-                        textDirection: TextDirection.ltr,
-                        decoration: InputDecoration(
-                          hintText: 'AIza...',
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                          suffixIcon: IconButton(
-                            tooltip: s.t('showKey'),
-                            icon: Icon(_show ? Icons.visibility_off_outlined : Icons.visibility_outlined),
-                            onPressed: () => setState(() => _show = !_show),
-                          ),
-                        ),
-                        onSubmitted: (_) => _saveKey(store, s),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(s.t('keyHint'), style: TextStyle(color: context.muted, fontSize: 13)),
-                      const SizedBox(height: 10),
-                      Row(children: [
-                        FilledButton(onPressed: () => _saveKey(store, s), child: Text(s.t('save'))),
-                        const SizedBox(width: 8),
-                        Flexible(
-                          child: TextButton.icon(
-                            icon: const Icon(Icons.open_in_new, size: 18),
-                            label: Text(s.t('getKey'), overflow: TextOverflow.ellipsis),
-                            onPressed: () => launchUrl(Uri.parse('https://aistudio.google.com/apikey'),
-                                mode: LaunchMode.externalApplication),
-                          ),
-                        ),
-                      ]),
-                    ]),
-            ),
             section(s.t('theme'), [
               SegmentedButton<ThemeMode>(
                 showSelectedIcon: false,

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:syncfusion_flutter_pdf/pdf.dart';
 
 /// Pulls readable text out of documents on the phone, keeping where each part
 /// came from (slide number, sheet and cell) so answers can cite it.
@@ -42,6 +43,7 @@ ExtractResult extractText(String ext, Uint8List bytes) {
       'docx' => _docx(bytes),
       'pptx' => _pptx(bytes),
       'xlsx' => _xlsx(bytes),
+      'pdf' => _pdf(bytes),
       _ => null,
     };
     if (text == null) return ExtractResult(null);
@@ -98,6 +100,25 @@ String _docx(Uint8List bytes) {
     out.writeln(isHeading ? '\n## $text' : text);
   }
   return out.toString();
+}
+
+/// The PDF's text layer, page by page, so answers from any server can cite pages.
+/// Scanned PDFs have none; Gemini still reads those from the original.
+String _pdf(Uint8List bytes) {
+  final doc = PdfDocument(inputBytes: bytes);
+  try {
+    final ex = PdfTextExtractor(doc);
+    final out = StringBuffer();
+    for (var i = 0; i < doc.pages.count; i++) {
+      final t = ex.extractText(startPageIndex: i, endPageIndex: i).trim();
+      if (t.isEmpty) continue;
+      out.writeln('\n[الصفحة ${i + 1} / Page ${i + 1}]');
+      out.writeln(t);
+    }
+    return out.toString();
+  } finally {
+    doc.dispose();
+  }
 }
 
 String _pptx(Uint8List bytes) {

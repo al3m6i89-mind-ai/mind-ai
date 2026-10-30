@@ -3,9 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:provider/provider.dart' hide Provider;
+import 'package:provider/provider.dart';
 
-import '../core/ai.dart';
 import '../core/models.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
@@ -187,7 +186,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = S(store.lang);
     final conv = store.current;
     _autoScroll(conv);
-    final gemini = store.provider == Provider.gemini;
+    final gemini = store.geminiKey.isNotEmpty;
 
     return Scaffold(
       key: _scaffold,
@@ -211,11 +210,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   height: 6,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
-                    color: gemini && store.geminiKey.isEmpty ? context.warn : Theme.of(context).colorScheme.primary,
+                    color: gemini ? Theme.of(context).colorScheme.primary : context.warn,
                   ),
                 ),
                 const SizedBox(width: 5),
-                Text(gemini ? 'Gemini' : s.t('freeMode'),
+                Text(gemini ? (store.mistralKey.isNotEmpty ? 'Gemini + Mistral' : 'Gemini') : s.t('freeMode'),
                     style: TextStyle(fontSize: 11.5, color: context.muted, fontWeight: FontWeight.w500)),
               ]),
             ],
@@ -272,7 +271,7 @@ class _EmptyState extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final store = context.watch<AppStore>();
-    final needsKey = store.provider == Provider.gemini && store.geminiKey.isEmpty;
+    final needsKey = store.geminiKey.isEmpty;
     final actions = [
       (Icons.folder_open_rounded, s.t('pickFile'), s.t('pickFileHint'), home.pickFiles),
       (Icons.photo_library_rounded, s.t('pickImage'), s.t('pickImageHint'), home.pickImages),

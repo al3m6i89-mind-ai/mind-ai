@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:file_chat/core/store.dart';
 import 'package:file_chat/main.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -30,10 +31,12 @@ void main() {
     expect(find.text('لا توجد محادثات بعد.'), findsOneWidget);
     await t.tap(find.text('الإعدادات'));
     await t.pumpAndSettle();
-    expect(find.text('مزوّد الذكاء الاصطناعي'), findsOneWidget);
+    expect(find.text('مفتاح Gemini'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('English'), 300, scrollable: find.ancestor(of: find.text('مفتاح Gemini'), matching: find.byType(Scrollable)).first);
+    await t.pumpAndSettle();
     await t.tap(find.text('English'));
     await t.pumpAndSettle();
-    expect(find.text('AI provider'), findsOneWidget);
+    expect(find.text('Language'), findsOneWidget);
   });
 
   testWidgets('attached file shows as a pending card', (t) async {

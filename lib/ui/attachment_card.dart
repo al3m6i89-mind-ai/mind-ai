@@ -1,8 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:provider/provider.dart' hide Provider;
+import 'package:provider/provider.dart';
 
-import '../core/ai.dart';
 import '../core/models.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
@@ -35,8 +34,11 @@ class AttachmentCard extends StatelessWidget {
 
   (String, Color) _status(BuildContext context) {
     final a = attachment;
-    final provider = context.watch<AppStore>().provider;
-    if (a.sentAsBinary && provider == Provider.pollinations) return (s.t('needsKey'), context.warn);
+    final store = context.watch<AppStore>();
+    final noVisionKey = store.geminiKey.isEmpty && store.mistralKey.isEmpty;
+    // A scanned PDF has no text layer: only Gemini can read it.
+    if (a.isPdf && (a.extractedText ?? '').isEmpty && store.geminiKey.isEmpty) return (s.t('needsKey'), context.warn);
+    if (a.isImage && noVisionKey) return (s.t('readyFree'), context.warn);
     if (a.note == 'truncated') return (s.t('truncated'), context.warn);
     if (!a.readable) return (s.t('notReadable'), context.danger);
     return (a.sentAsBinary ? s.t('ready') : s.t('readyText'), Theme.of(context).colorScheme.primary);
