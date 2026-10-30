@@ -47,26 +47,69 @@ class ImageGen {
     ImageBackend? backend,
   }) async {
     seed ??= Random().nextInt(1 << 31);
+    final chosen = backend ?? settings.imageBackend;
     try {
-      final bytes = switch (backend ?? settings.imageBackend) {
-        ImageBackend.pollinations => await _pollinations(prompt, width, height, seed, model, reference),
-        ImageBackend.cloudflare =>
-          reference != null && canEdit
-              ? await _pollinations(prompt, width, height, seed, model, reference)
-              : await _cloudflare(prompt, seed),
-        ImageBackend.seedream => await _seedream(prompt, width, height, seed, reference),
-        ImageBackend.huggingface =>
-          reference != null && canEdit
-              ? await _pollinations(prompt, width, height, seed, model, reference)
-              : await _huggingFace(prompt, width, height, seed),
-        ImageBackend.gemini => await _gemini(prompt, reference),
-        ImageBackend.replicate => await _replicate(prompt, width, height, reference),
-        ImageBackend.custom => await _custom(prompt, width, height, seed),
-      };
+      final bytes = await _run(chosen, prompt, width, height, seed, model, reference);
       return GeneratedImage(bytes, prompt: prompt);
+    } on AiException {
+      // The free servers (Pollinations/Cloudflare/HF) go busy at peak times and
+      // return 402/429/503. Rather than dead-ending, fall back to a key the user
+      // already added — Gemini first, then Cloudflare — so a picture still comes
+      // out. Only for the free tiers, and never loop back onto themselves.
+      final freeBusy =
+          chosen == ImageBackend.pollinations ||
+          chosen == ImageBackend.cloudflare ||
+          chosen == ImageBackend.huggingface;
+      if (freeBusy) {
+        if (settings.textKey(TextBackend.gemini).isNotEmpty && chosen != ImageBackend.gemini) {
+          try {
+            return GeneratedImage(await _gemini(prompt, reference), prompt: prompt);
+          } on AiException {
+            // fall through to the next fallback
+          } on TimeoutException {
+            // fall through to the next fallback
+          }
+        }
+        if (settings.cfAccountId.isNotEmpty && settings.cfToken.isNotEmpty && chosen != ImageBackend.cloudflare) {
+          try {
+            return GeneratedImage(await _cloudflare(prompt, seed), prompt: prompt);
+          } on AiException {
+            // fall through to the original error
+          } on TimeoutException {
+            // fall through to the original error
+          }
+        }
+      }
+      rethrow;
     } on TimeoutException {
       throw AiException('استغرق إنشاء الصورة وقتاً طويلاً. حاول مرة أخرى.');
     }
+  }
+
+  Future<Uint8List> _run(
+    ImageBackend backend,
+    String prompt,
+    int width,
+    int height,
+    int seed,
+    String? model,
+    Uint8List? reference,
+  ) async {
+    return switch (backend) {
+      ImageBackend.pollinations => await _pollinations(prompt, width, height, seed, model, reference),
+      ImageBackend.cloudflare =>
+        reference != null && canEdit
+            ? await _pollinations(prompt, width, height, seed, model, reference)
+            : await _cloudflare(prompt, seed),
+      ImageBackend.seedream => await _seedream(prompt, width, height, seed, reference),
+      ImageBackend.huggingface =>
+        reference != null && canEdit
+            ? await _pollinations(prompt, width, height, seed, model, reference)
+            : await _huggingFace(prompt, width, height, seed),
+      ImageBackend.gemini => await _gemini(prompt, reference),
+      ImageBackend.replicate => await _replicate(prompt, width, height, reference),
+      ImageBackend.custom => await _custom(prompt, width, height, seed),
+    };
   }
 
   Future<Uint8List> _pollinations(String prompt, int w, int h, int seed, String? model, Uint8List? reference) async {

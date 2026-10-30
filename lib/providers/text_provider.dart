@@ -27,6 +27,10 @@ class TextProvider {
       yield* _claude(url, key, settings.textModel(backend), history, system);
       return;
     }
+    if (backend == TextBackend.gemini) {
+      yield* _gemini(key, settings.textModel(backend), history, system);
+      return;
+    }
 
     final messages = <Map<String, dynamic>>[
       if (system != null) {'role': 'system', 'content': system},
@@ -158,6 +162,87 @@ class TextProvider {
       }
     } on TimeoutException {
       throw AiException('انتهت مهلة الاتصال بـ Claude. حاول مرة أخرى.');
+    } finally {
+      client.close();
+    }
+  }
+
+  /// Native Gemini API (generateContent) with SSE streaming. The OpenAI-compat
+  /// shim rejects some model names ("unexpected model name format"), so chat
+  /// talks to the native endpoint directly, like image and voice already do.
+  Stream<String> _gemini(String key, String model, List<ChatMessage> history, String? system) async* {
+    // Accept "models/gemini-…", "gemini-…", or a stray full path; keep the id.
+    var m = model.trim();
+    if (m.contains('/')) m = m.split('/').last;
+    if (m.isEmpty) m = 'gemini-2.5-flash';
+
+    final contents = <Map<String, dynamic>>[];
+    for (final msg in history.where((e) => e.role != Role.system)) {
+      final role = msg.role == Role.assistant ? 'model' : 'user';
+      final parts = <Map<String, dynamic>>[];
+      if (msg.imageBytes != null) {
+        parts.add({
+          'inline_data': {'mime_type': _mime(msg.imageBytes!), 'data': base64Encode(msg.imageBytes!)},
+        });
+      }
+      parts.add({'text': msg.text.isEmpty ? (msg.imageBytes != null ? 'صف هذه الصورة' : '…') : msg.text});
+      if (contents.isNotEmpty && contents.last['role'] == role) {
+        (contents.last['parts'] as List).addAll(parts);
+      } else {
+        contents.add({'role': role, 'parts': parts});
+      }
+    }
+    while (contents.isNotEmpty && contents.first['role'] != 'user') {
+      contents.removeAt(0);
+    }
+    if (contents.isEmpty) return;
+
+    final url = 'https://generativelanguage.googleapis.com/v1beta/models/$m:streamGenerateContent?alt=sse';
+    final req = http.Request('POST', Uri.parse(url))
+      ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': key})
+      ..body = jsonEncode({
+        'contents': contents,
+        if (system != null && system.trim().isNotEmpty)
+          'systemInstruction': {
+            'parts': [
+              {'text': system},
+            ],
+          },
+      });
+
+    final client = http.Client();
+    try {
+      final res = await client.send(req).timeout(const Duration(seconds: 90));
+      if (res.statusCode >= 400) {
+        final err = await res.stream.bytesToString();
+        throw AiException(_friendlyError(res.statusCode, _claudeError(err)));
+      }
+      var buffer = '';
+      await for (final chunk in res.stream.transform(utf8.decoder)) {
+        buffer += chunk;
+        final lines = buffer.split('\n');
+        buffer = lines.removeLast();
+        for (final line in lines) {
+          final t = line.trim();
+          if (!t.startsWith('data:')) continue;
+          final data = t.substring(5).trim();
+          if (data.isEmpty || data == '[DONE]') continue;
+          try {
+            final j = jsonDecode(data) as Map<String, dynamic>;
+            final parts = (j['candidates'] as List?)?.firstOrNull?['content']?['parts'] as List?;
+            if (parts != null) {
+              for (final p in parts) {
+                final text = p is Map ? p['text'] : null;
+                if (text is String && text.isNotEmpty) yield text;
+              }
+            }
+          } catch (_) {
+            // Keep-alive or partial frame; ignore.
+          }
+        }
+      }
+    } on TimeoutException {
+      throw AiException('انتهت مهلة الاتصال بـ Gemini. حاول مرة أخرى.');
     } finally {
       client.close();
     }
