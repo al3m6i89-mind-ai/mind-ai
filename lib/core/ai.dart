@@ -29,11 +29,18 @@ When nothing is attached, answer normally as a helpful assistant.
 /// Streams a reply. Gemini reads PDFs and images itself; extracted text from
 /// Word, Excel and PowerPoint is sent as text.
 class AiClient {
-  AiClient({required this.provider, required this.geminiKey, this.model = 'gemini-2.5-flash'});
+  AiClient({required this.provider, required this.geminiKey, this.model = defaultGeminiModel, this.onModelChanged});
+
+  /// Google's alias for its current Flash model, so the app keeps working when
+  /// older versions are retired.
+  static const defaultGeminiModel = 'gemini-flash-latest';
 
   final Provider provider;
   final String geminiKey;
   final String model;
+
+  /// Called when Google retired [model] and another one answered instead.
+  final void Function(String model)? onModelChanged;
 
   static const maxInlineBytes = 18 * 1024 * 1024;
 
@@ -91,24 +98,35 @@ class AiClient {
   Stream<String> _gemini(Conversation conv) async* {
     final contents = await _geminiContents(conv);
     if (contents.isEmpty) return;
-    final url = 'https://generativelanguage.googleapis.com/v1beta/models/$model:streamGenerateContent?alt=sse';
-    final req = http.Request('POST', Uri.parse(url))
-      ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim()})
-      ..body = jsonEncode({
-        'contents': contents,
-        'systemInstruction': {
-          'parts': [
-            {'text': _system},
-          ],
-        },
-      });
+    final body = jsonEncode({
+      'contents': contents,
+      'systemInstruction': {
+        'parts': [
+          {'text': _system},
+        ],
+      },
+    });
     final client = http.Client();
     try {
-      final res = await client.send(req).timeout(const Duration(seconds: 120));
-      if (res.statusCode >= 400) {
-        final body = await res.stream.bytesToString();
-        throw AiException(_friendly(res.statusCode, body));
+      // A retired model answers 404, often naming its replacement; try that, then the
+      // alias, before giving up. Nothing has been shown yet, so retrying is safe.
+      final tried = <String>{};
+      var current = model;
+      late http.StreamedResponse res;
+      while (true) {
+        tried.add(current);
+        final url = 'https://generativelanguage.googleapis.com/v1beta/models/$current:streamGenerateContent?alt=sse';
+        final req = http.Request('POST', Uri.parse(url))
+          ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim()})
+          ..body = body;
+        res = await client.send(req).timeout(const Duration(seconds: 120));
+        if (res.statusCode < 400) break;
+        final err = await res.stream.bytesToString();
+        final next = res.statusCode == 404 ? replacementModel(err, tried) : null;
+        if (next == null) throw AiException(_friendly(res.statusCode, err));
+        current = next;
       }
+      if (current != model) onModelChanged?.call(current);
       var buffer = '';
       await for (final chunk in res.stream.transform(utf8.decoder)) {
         buffer += chunk;
@@ -143,6 +161,16 @@ class AiClient {
     } finally {
       client.close();
     }
+  }
+
+  /// The model to try after [error] said the last one is gone: the one Google
+  /// names in the message, else the Flash alias. Null when all were tried.
+  static String? replacementModel(String error, Set<String> tried) {
+    for (final m in RegExp(r'models/(gemini-[\w.\-]+)').allMatches(error)) {
+      final name = m.group(1)!;
+      if (!tried.contains(name)) return name;
+    }
+    return tried.contains(defaultGeminiModel) ? null : defaultGeminiModel;
   }
 
   /// Free, no key. Text only: it cannot read PDFs or images.

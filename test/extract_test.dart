@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
+import 'package:file_chat/core/ai.dart';
 import 'package:file_chat/core/extract.dart';
 import 'package:file_chat/core/models.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -106,5 +107,13 @@ void main() {
     expect(back.matches('invoice'), isTrue);
     expect(back.matches('الإجمالي'), isTrue);
     expect(back.matches('غير موجود'), isFalse);
+  });
+
+  test('retired Gemini model falls over to the named replacement, then the alias', () {
+    const err = '{"error":{"code":404,"message":"This model models/gemini-2.5-flash is no longer available to new users. '
+        'Please update your code to use models/gemini-3.8-flash for the latest features."}}';
+    expect(AiClient.replacementModel(err, {'gemini-2.5-flash'}), 'gemini-3.8-flash');
+    expect(AiClient.replacementModel(err, {'gemini-2.5-flash', 'gemini-3.8-flash'}), AiClient.defaultGeminiModel);
+    expect(AiClient.replacementModel('not found', {AiClient.defaultGeminiModel}), isNull);
   });
 }

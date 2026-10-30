@@ -239,7 +239,12 @@ class AppStore extends ChangeNotifier {
     final reply = Message(id: _uuid.v4(), role: Role.assistant, text: '', status: MsgStatus.streaming);
     conv.updatedAt = DateTime.now();
     _sort();
-    final client = AiClient(provider: provider, geminiKey: geminiKey);
+    final client = AiClient(
+      provider: provider,
+      geminiKey: geminiKey,
+      model: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
+      onModelChanged: (m) => _prefs.setString('geminiModel', m),
+    );
     late final Stream<String> stream;
     try {
       // The history is built before the placeholder reply is added.
