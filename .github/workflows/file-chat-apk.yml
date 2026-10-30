@@ -9,6 +9,12 @@ on:
 permissions:
   contents: write
 
+# Only the newest push is built; an older build still running is cancelled
+# so two builds never race to commit dist/.
+concurrency:
+  group: file-chat-apk
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -40,7 +46,7 @@ jobs:
           git add dist/file-chat-unsigned.apk
           git commit -m "Build unsigned APK (run ${{ github.run_number }}) [skip ci]"
           # GitHub sometimes answers a push with a transient 500; retry a few times.
-          for i in 1 2 3 4 5; do git push && exit 0; sleep $((i * 5)); git pull --rebase; done
+          for i in 1 2 3 4 5; do git push && exit 0; sleep $((i * 5)); git pull --rebase -X theirs; done
           exit 1
       - uses: actions/upload-artifact@v4
         if: always()
