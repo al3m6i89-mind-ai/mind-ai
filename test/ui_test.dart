@@ -4,7 +4,6 @@ import 'dart:typed_data';
 
 import 'package:file_chat/core/store.dart';
 import 'package:file_chat/main.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -26,9 +25,7 @@ void main() {
   testWidgets('empty state, drawer and settings open', (t) async {
     await pump(t);
     expect(find.text('اسأل عن ملفاتك وصورك'), findsOneWidget);
-    await t.tap(find.byTooltip('Open navigation menu').evaluate().isEmpty
-        ? find.byIcon(Icons.menu)
-        : find.byTooltip('Open navigation menu'));
+    await t.tap(find.byTooltip('المحادثات'));
     await t.pumpAndSettle();
     expect(find.text('لا توجد محادثات بعد.'), findsOneWidget);
     await t.tap(find.text('الإعدادات'));

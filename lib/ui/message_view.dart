@@ -45,7 +45,7 @@ class MessageView extends StatelessWidget {
         child: Transform.translate(offset: Offset(0, (1 - v) * 10), child: child),
       ),
       child: Padding(
-        padding: const EdgeInsets.only(bottom: 18),
+        padding: const EdgeInsets.only(bottom: 20),
         child: user ? _user(context, files) : _assistant(context),
       ),
     );
@@ -64,9 +64,18 @@ class MessageView extends StatelessWidget {
               GestureDetector(
                 onLongPress: () => _copy(context),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-                  decoration: BoxDecoration(color: context.userBubble, borderRadius: BorderRadius.circular(18)),
-                  child: SelectableText(message.text, style: const TextStyle(fontSize: 15.5, height: 1.5)),
+                  padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: context.userBubble,
+                    borderRadius: const BorderRadiusDirectional.only(
+                      topStart: Radius.circular(20),
+                      topEnd: Radius.circular(20),
+                      bottomStart: Radius.circular(20),
+                      bottomEnd: Radius.circular(6),
+                    ),
+                  ),
+                  child: SelectableText(message.text,
+                      style: TextStyle(fontSize: 15.5, height: 1.55, color: context.onUserBubble)),
                 ),
               ),
           ],
@@ -83,13 +92,12 @@ class MessageView extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Row(children: [
-          CircleAvatar(
-            radius: 12,
-            backgroundColor: theme.colorScheme.primary,
-            child: const Icon(Icons.auto_awesome, size: 14, color: Colors.white),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: Image.asset('assets/logo.png', width: 26, height: 26),
           ),
           const SizedBox(width: 8),
-          Text(s.t('assistant'), style: const TextStyle(fontWeight: FontWeight.w600)),
+          Text(s.t('assistant'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
         ]),
         const SizedBox(height: 6),
         if (waiting)

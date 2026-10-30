@@ -5,14 +5,14 @@ class S {
   bool get ar => lang == 'ar';
 
   static const _ar = {
-    'appName': 'قارئ الملفات والصور',
+    'appName': 'قارئ الملفات',
     'newChat': 'محادثة جديدة',
     'search': 'ابحث في المحادثات',
     'noChats': 'لا توجد محادثات بعد.',
     'noResults': 'لا توجد نتائج.',
     'placeholder': 'اسأل عن ملفاتك...',
-    'attachFile': 'إرفاق ملف',
-    'attachImage': 'إرفاق صورة',
+    'attachFile': 'ملف',
+    'attachImage': 'صورة',
     'send': 'إرسال',
     'stop': 'إيقاف',
     'rename': 'إعادة تسمية',
@@ -65,6 +65,18 @@ class S {
     'privacy': 'ملفاتك ومحادثاتك محفوظة على هاتفك فقط. عند السؤال تُرسل الملفات إلى مزوّد الذكاء الاصطناعي الذي اخترته للإجابة.',
     'keySaved': 'تم الحفظ',
     'copy': 'نسخ',
+    'chats': 'المحادثات',
+    'freeMode': 'الوضع المجاني',
+    'pickFile': 'ملف',
+    'pickFileHint': 'PDF أو Word أو Excel أو PowerPoint من مدير الملفات',
+    'pickImage': 'صورة',
+    'pickImageHint': 'من معرض الصور: فواتير، مستندات، لقطات شاشة',
+    'tryAsking': 'جرّب أن تسأل',
+    'sug4': 'ترجم محتوى الملف إلى الإنجليزية',
+    'today': 'اليوم',
+    'yesterday': 'أمس',
+    'thisWeek': 'هذا الأسبوع',
+    'earlier': 'أقدم',
     'copied': 'تم النسخ',
     'showKey': 'إظهار المفتاح',
     'about': 'حول التطبيق',
@@ -77,8 +89,8 @@ class S {
     'noChats': 'No chats yet.',
     'noResults': 'No results.',
     'placeholder': 'Ask about your files...',
-    'attachFile': 'Attach file',
-    'attachImage': 'Attach image',
+    'attachFile': 'File',
+    'attachImage': 'Image',
     'send': 'Send',
     'stop': 'Stop',
     'rename': 'Rename',
@@ -131,6 +143,18 @@ class S {
     'privacy': 'Your files and chats are stored only on your phone. When you ask, files are sent to the AI provider you chose to answer.',
     'keySaved': 'Saved',
     'copy': 'Copy',
+    'chats': 'Chats',
+    'freeMode': 'Free mode',
+    'pickFile': 'File',
+    'pickFileHint': 'PDF, Word, Excel or PowerPoint from your files',
+    'pickImage': 'Image',
+    'pickImageHint': 'From your gallery: receipts, documents, screenshots',
+    'tryAsking': 'Try asking',
+    'sug4': 'Translate the file into Arabic',
+    'today': 'Today',
+    'yesterday': 'Yesterday',
+    'thisWeek': 'This week',
+    'earlier': 'Earlier',
     'copied': 'Copied',
     'showKey': 'Show key',
     'about': 'About',
@@ -140,6 +164,14 @@ class S {
     var s = (ar ? _ar[key] : _en[key]) ?? _ar[key] ?? key;
     vars?.forEach((k, v) => s = s.replaceAll('{$k}', v));
     return s;
+  }
+
+  String filesCount(int n) {
+    if (!ar) return n == 1 ? '1 file' : '$n files';
+    if (n == 1) return 'ملف واحد';
+    if (n == 2) return 'ملفان';
+    if (n <= 10) return '$n ملفات';
+    return '$n ملفاً';
   }
 
   /// Turns an AiException code (or raw message) into readable text.
