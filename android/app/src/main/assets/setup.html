@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root { --bg:#f7f7f5; --card:#fff; --text:#1c1c1a; --muted:#6b6b66; --accent:#0f766e; --border:#e3e3df; --danger:#b42318; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#161716; --card:#1f201f; --text:#ececea; --muted:#a2a39e; --accent:#2dd4bf; --border:#343634; --danger:#ff8a7a; } }
+  body { margin:0; background:var(--bg); color:var(--text); font-family:"Noto Sans Arabic",system-ui,sans-serif; line-height:1.7; }
+  main { max-width:440px; margin:0 auto; padding:40px 18px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  p, li { color:var(--muted); font-size:14.5px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:18px; padding:18px; margin-top:18px; }
+  input { width:100%; box-sizing:border-box; font:inherit; font-size:16px; padding:12px; border-radius:12px; border:1px solid var(--border); background:var(--bg); color:var(--text); direction:ltr; text-align:left; }
+  button { width:100%; margin-top:12px; font:inherit; font-weight:700; padding:12px; border:0; border-radius:12px; background:var(--accent); color:#fff; }
+  .error { color:var(--danger); font-size:14px; min-height:1em; }
+  code { direction:ltr; unicode-bidi:embed; background:var(--border); padding:0 5px; border-radius:5px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>الاتصال بالتطبيق على حاسوبك</h1>
+  <p>الذكاء الاصطناعي وملفاتك تعمل على حاسوبك. هذا التطبيق يعرضها على هاتفك عبر شبكة Wi-Fi نفسها.</p>
+  <div class="card">
+    <label for="server">عنوان الخادم</label>
+    <input id="server" type="url" inputmode="url" placeholder="http://192.168.1.10:8000" autocomplete="off">
+    <p class="error" id="error"></p>
+    <button id="go" type="button">اتصال</button>
+  </div>
+  <div class="card">
+    <ol>
+      <li>في ملف <code>.env</code> على الحاسوب اجعل <code>HOST=0.0.0.0</code> ثم شغّل التطبيق.</li>
+      <li>اعرف عنوان الحاسوب: في Windows اكتب <code>ipconfig</code>، وفي Mac افتح إعدادات Wi-Fi.</li>
+      <li>اكتب العنوان هنا مع <code>:8000</code> في آخره.</li>
+    </ol>
+  </div>
+</main>
+<script>
+  var input = document.getElementById("server"), err = document.getElementById("error");
+  var app = window.AndroidApp;
+  if (app) {
+    input.value = app.getServer() || "";
+    var last = app.getLastError();
+    if (last) err.textContent = "تعذّر الاتصال (" + last + "). تأكد أن التطبيق يعمل على الحاسوب وأن الهاتف على نفس الشبكة.";
+  }
+  document.getElementById("go").addEventListener("click", function () {
+    var v = input.value.trim();
+    if (!/^https?:\/\//i.test(v)) v = "http://" + v;
+    if (!/^https?:\/\/[^\s/]+(:\d+)?\/?$/i.test(v)) { err.textContent = "اكتب عنواناً صحيحاً مثل http://192.168.1.10:8000"; return; }
+    err.textContent = "";
+    if (app) app.connect(v); else location.href = v;
+  });
+</script>
+</body>
+</html>
