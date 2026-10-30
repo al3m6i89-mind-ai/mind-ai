@@ -35,4 +35,12 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add dist/file-chat-unsigned.apk
           git commit -m "Build unsigned APK (run ${{ github.run_number }}) [skip ci]"
-          git push
+          # GitHub sometimes answers a push with a transient 500; retry a few times.
+          for i in 1 2 3 4 5; do git push && exit 0; sleep $((i * 5)); git pull --rebase; done
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: file-chat-unsigned-apk
+          path: android/app/build/outputs/apk/release/app-release-unsigned.apk
+          retention-days: 30
