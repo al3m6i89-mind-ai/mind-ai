@@ -14,6 +14,7 @@ class FakeAi {
   final Map<String, List<Object>> plan;
   final calls = <String>[];
   final bodies = <String, Map<String, dynamic>>{};
+  int uploaded = 0;
   late HttpServer server;
 
   Endpoints get endpoints {
@@ -24,9 +25,32 @@ class FakeAi {
   Future<void> start() async {
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
+      final path = req.uri.path;
+      // Gemini file store: start, upload, then one "processing" poll.
+      if (path == '/upload/v1beta/files') {
+        await utf8.decodeStream(req);
+        calls.add('upload-start');
+        req.response.headers.set('x-goog-upload-url', 'http://127.0.0.1:${server.port}/upload-session');
+        await req.response.close();
+        return;
+      }
+      if (path == '/upload-session') {
+        uploaded = (await req.fold<List<int>>([], (a, b) => a..addAll(b))).length;
+        calls.add('upload');
+        req.response.write(jsonEncode({
+          'file': {'name': 'files/abc', 'uri': 'https://files/abc', 'state': 'PROCESSING'},
+        }));
+        await req.response.close();
+        return;
+      }
+      if (path == '/v1beta/files/abc') {
+        calls.add('poll');
+        req.response.write(jsonEncode({'name': 'files/abc', 'uri': 'https://files/abc', 'state': 'ACTIVE'}));
+        await req.response.close();
+        return;
+      }
       final raw = await utf8.decodeStream(req);
       final body = jsonDecode(raw) as Map<String, dynamic>;
-      final path = req.uri.path;
       final String key;
       if (path.startsWith('/v1beta/models/')) {
         key = 'gemini:${req.uri.pathSegments.last.split(':').first}';
@@ -247,5 +271,31 @@ void main() {
     expect(f.calls.where((c) => !c.startsWith('gemini')), isEmpty);
     expect(traces.first, startsWith('gemini-flash-latest: busy — HTTP 503'));
     await f.stop();
+  });
+
+  test('a big PDF is uploaded to Gemini once and referenced by link', () async {
+    final f = FakeAi({});
+    await f.start();
+    final big = File('${(await Directory.systemTemp.createTemp()).path}/big.pdf')
+      ..writeAsBytesSync(List.filled(5 * 1024 * 1024, 32));
+    final a = Attachment(id: 'b', name: 'big.pdf', ext: 'pdf', size: 5 * 1024 * 1024, path: big.path, extractedText: 'x');
+    final ai = AiClient(geminiKey: 'k', endpoints: f.endpoints, roundPauses: noWait, filePollInterval: Duration.zero);
+    final (text, _) = await run(ai, conv(files: [a]));
+    expect(text, 'ok from gemini:gemini-flash-latest');
+    expect(f.calls, ['upload-start', 'upload', 'poll', 'gemini:gemini-flash-latest']);
+    expect(f.uploaded, 5 * 1024 * 1024);
+    expect(jsonEncode(f.bodies['gemini:gemini-flash-latest']), contains('https://files/abc'));
+    expect(a.geminiUri, 'https://files/abc');
+    // Asked again: the stored link is reused, nothing is uploaded.
+    f.calls.clear();
+    await run(ai, conv(files: [a]));
+    expect(f.calls, ['gemini:gemini-flash-latest']);
+    await f.stop();
+  });
+
+  test('paid plan starts with Gemini Pro', () {
+    final ai = AiClient(geminiKey: 'k', preferPro: true);
+    expect(ai.chain().first.model, 'gemini-pro-latest');
+    expect(ai.chain().where((a) => a.model == 'gemini-pro-latest'), hasLength(1));
   });
 }

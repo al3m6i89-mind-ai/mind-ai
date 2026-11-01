@@ -21,7 +21,7 @@ class MessageView extends StatelessWidget {
   final Message message;
   final S s;
   final bool isLast;
-  final VoidCallback onRetry;
+  final Future<void> Function() onRetry;
   final void Function(Attachment) onDeleteFile;
 
   @override

@@ -82,6 +82,13 @@ void main() {
       await t.pump(const Duration(seconds: 1));
     });
   });
+  testWidgets('plans', (t) async {
+    final store = (await t.runAsync(() => makeStore({'theme': 'dark'})))!;
+    await shot(t, store, 'plans', then: () async {
+      await t.tap(find.byTooltip('اشترك الآن'));
+      await t.pump(const Duration(seconds: 1));
+    });
+  });
 }
 
 Uint8List _xlsx() => Uint8List.fromList([0x50, 0x4B, 0x03, 0x04, 0, 0, 0, 0]);

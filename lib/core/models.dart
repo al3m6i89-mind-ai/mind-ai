@@ -15,6 +15,8 @@ class Attachment {
     required this.path,
     this.extractedText,
     this.note,
+    this.geminiUri,
+    this.geminiUriExpires,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -28,6 +30,11 @@ class Attachment {
   /// Why the content could not be read, if it could not.
   final String? note;
   final DateTime createdAt;
+
+  /// A big file uploaded to Gemini's file store (kept there for 48 hours),
+  /// so it is not uploaded again for every question.
+  String? geminiUri;
+  DateTime? geminiUriExpires;
 
   bool get isImage => const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext);
   bool get isPdf => ext == 'pdf';
@@ -61,6 +68,8 @@ class Attachment {
         'path': path,
         if (extractedText != null) 'text': extractedText,
         if (note != null) 'note': note,
+        if (geminiUri != null) 'geminiUri': geminiUri,
+        if (geminiUriExpires != null) 'geminiUriExpires': geminiUriExpires!.toIso8601String(),
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -72,6 +81,8 @@ class Attachment {
         path: j['path'] as String,
         extractedText: j['text'] as String?,
         note: j['note'] as String?,
+        geminiUri: j['geminiUri'] as String?,
+        geminiUriExpires: DateTime.tryParse(j['geminiUriExpires'] as String? ?? ''),
         createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
       );
 }

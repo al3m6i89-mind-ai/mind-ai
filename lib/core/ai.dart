@@ -107,11 +107,15 @@ class AiClient {
   AiClient({
     required this.geminiKey,
     this.mistralKey = '',
+    this.preferPro = false,
     this.geminiModel = defaultGeminiModel,
     this.onModelChanged,
     this.endpoints = const Endpoints(),
     this.roundPauses = const [Duration(seconds: 4), Duration(seconds: 12), Duration(seconds: 25)],
+    this.filePollInterval = const Duration(seconds: 2),
   });
+
+  final Duration filePollInterval;
 
   /// Google's alias for its current Flash model, so the app keeps working when
   /// older versions are retired.
@@ -121,6 +125,9 @@ class AiClient {
   final String mistralKey;
   final String geminiModel;
 
+  /// Paid plan: start with Gemini Pro, the most accurate model.
+  final bool preferPro;
+
   /// Called when Google retired [geminiModel] and its successor answered.
   final void Function(String model)? onModelChanged;
   final Endpoints endpoints;
@@ -128,11 +135,21 @@ class AiClient {
   /// Pauses before the second and later rounds through the chain.
   final List<Duration> roundPauses;
 
-  static const maxInlineBytes = 18 * 1024 * 1024;
+  /// Inline data must stay well under Gemini's 20 MB request limit; bigger
+  /// files are uploaded to its file store instead.
+  static const maxInlineBytes = 14 * 1024 * 1024;
+  static const maxInlineFile = 4 * 1024 * 1024;
+  static const maxGeminiPdf = 50 * 1024 * 1024;
 
   List<Attempt> chain() => [
         if (geminiKey.trim().isNotEmpty)
-          for (final m in {geminiModel, defaultGeminiModel, 'gemini-pro-latest', 'gemini-flash-lite-latest'})
+          for (final m in {
+            if (preferPro) 'gemini-pro-latest',
+            geminiModel,
+            defaultGeminiModel,
+            'gemini-pro-latest',
+            'gemini-flash-lite-latest',
+          })
             Attempt(Backend.gemini, m, 'Gemini'),
         if (mistralKey.trim().isNotEmpty) ...[
           const Attempt(Backend.mistral, 'mistral-medium-latest', 'Mistral'),
@@ -344,15 +361,21 @@ class AiClient {
       final parts = <Map<String, dynamic>>[];
       for (final a in m.attachments) {
         final bytes = a.sentAsBinary ? await _bytes(a) : null;
-        if (bytes != null && inlineBytes + bytes.length <= maxInlineBytes) {
+        if (bytes == null || (a.isPdf && bytes.length > maxGeminiPdf)) {
+          // Gemini reads PDFs up to 50 MB; a bigger one is sent as the text read on the phone.
+          parts.add({'text': _asText(a)});
+        } else if (bytes.length <= maxInlineFile && inlineBytes + bytes.length <= maxInlineBytes) {
           inlineBytes += bytes.length;
           parts.add({'text': '[ملف مرفق: ${a.name}]'});
           parts.add({
             'inline_data': {'mime_type': a.mime, 'data': base64Encode(bytes)},
           });
         } else {
-          // Too big to send whole, or a document: send the text read on the phone.
-          parts.add({'text': _asText(a)});
+          // Big files go through Gemini's file store, which takes PDFs up to 50 MB.
+          parts.add({'text': '[ملف مرفق: ${a.name}]'});
+          parts.add({
+            'file_data': {'mime_type': a.mime, 'file_uri': await _geminiFile(a, bytes)},
+          });
         }
       }
       if (m.text.trim().isNotEmpty) parts.add({'text': m.text});
@@ -364,6 +387,78 @@ class AiClient {
       }
     }
     return contents;
+  }
+
+  /// Uploads [a] to Gemini's file store once (resumable upload) and waits until
+  /// Google has processed it. The link is reused until shortly before it expires.
+  Future<String> _geminiFile(Attachment a, List<int> bytes) async {
+    final cached = a.geminiUri;
+    final expires = a.geminiUriExpires;
+    if (cached != null && expires != null && expires.isAfter(DateTime.now().add(const Duration(hours: 1)))) {
+      return cached;
+    }
+    final key = geminiKey.trim();
+    final client = http.Client();
+    try {
+      final start = await client
+          .post(
+            Uri.parse('${endpoints.gemini}/upload/v1beta/files'),
+            headers: {
+              'x-goog-api-key': key,
+              'X-Goog-Upload-Protocol': 'resumable',
+              'X-Goog-Upload-Command': 'start',
+              'X-Goog-Upload-Header-Content-Length': '${bytes.length}',
+              'X-Goog-Upload-Header-Content-Type': a.mime,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode({
+              'file': {'display_name': a.name},
+            }),
+          )
+          .timeout(const Duration(seconds: 60));
+      final uploadUrl = start.headers['x-goog-upload-url'];
+      if (start.statusCode >= 400 || uploadUrl == null) {
+        throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), start.statusCode, start.body);
+      }
+      final done = await client
+          .post(
+            Uri.parse(uploadUrl),
+            headers: {
+              'X-Goog-Upload-Offset': '0',
+              'X-Goog-Upload-Command': 'upload, finalize',
+            },
+            body: bytes,
+          )
+          .timeout(const Duration(minutes: 5));
+      if (done.statusCode >= 400) {
+        throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), done.statusCode, done.body);
+      }
+      var file = (jsonDecode(done.body) as Map<String, dynamic>)['file'] as Map<String, dynamic>;
+      // PDFs are processed for a moment before they can be read.
+      for (var i = 0; i < 60 && file['state'] == 'PROCESSING'; i++) {
+        await Future<void>.delayed(filePollInterval);
+        final r = await client
+            .get(Uri.parse('${endpoints.gemini}/v1beta/${file['name']}'), headers: {'x-goog-api-key': key})
+            .timeout(const Duration(seconds: 30));
+        if (r.statusCode >= 400) throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), r.statusCode, r.body);
+        file = jsonDecode(r.body) as Map<String, dynamic>;
+      }
+      if (file['state'] == 'FAILED') throw _Fail('fileFailed', detail: 'Gemini could not process ${a.name}');
+      final uri = file['uri'] as String;
+      a
+        ..geminiUri = uri
+        ..geminiUriExpires = DateTime.tryParse(file['expirationTime'] as String? ?? '') ??
+            DateTime.now().add(const Duration(hours: 47));
+      return uri;
+    } on TimeoutException {
+      throw _Fail('timeout', retryable: true, detail: 'upload of ${a.name}');
+    } on SocketException {
+      throw _Fail('offline', retryable: true);
+    } on http.ClientException {
+      throw _Fail('network', retryable: true, detail: 'upload of ${a.name}');
+    } finally {
+      client.close();
+    }
   }
 
   /// OpenAI-style messages for Mistral and the free server: document and PDF

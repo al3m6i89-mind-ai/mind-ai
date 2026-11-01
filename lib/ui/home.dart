@@ -6,10 +6,12 @@ import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 
 import '../core/models.dart';
+import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
 import 'attachment_card.dart';
 import 'message_view.dart';
+import 'plans.dart';
 import 'settings.dart';
 import 'theme.dart';
 
@@ -86,8 +88,13 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _add(String name, int? length, Future<Uint8List> Function() read) async {
     // Size is checked before reading so a huge file is never loaded into memory.
-    if (length != null && length > maxFileBytes) {
-      _toast(s.t('tooLarge', {'name': name}), error: true);
+    final store = context.read<AppStore>();
+    if (length != null && length > store.maxFileBytes) {
+      if (store.premium) {
+        _toast(s.t('tooLarge', {'name': name}), error: true);
+      } else {
+        await showPaywall(context, s.t('limitFile', {'name': name}));
+      }
       return;
     }
     final bytes = await read();
@@ -109,7 +116,10 @@ class _HomeScreenState extends State<HomeScreen> {
     if (text.trim().isEmpty && store.pending.isEmpty) return;
     _input.clear();
     HapticFeedback.lightImpact();
-    await store.send(text, s.t('newChat'));
+    if (!await store.send(text, s.t('newChat')) && mounted) {
+      _input.text = text;
+      await showPaywall(context, s.t('limitQuestions', {'n': '${Plan.freeDailyQuestions}'}));
+    }
   }
 
   void _autoScroll(Conversation? c) {
@@ -221,6 +231,12 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
         ),
         actions: [
+          if (!store.premium)
+            IconButton(
+              tooltip: s.t('subscribe'),
+              icon: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFE0A100)),
+              onPressed: () => openPlans(context),
+            ),
           IconButton(
             tooltip: s.t('newChat'),
             icon: const Icon(Icons.edit_square),
@@ -248,7 +264,11 @@ class _HomeScreenState extends State<HomeScreen> {
                           message: conv.messages[i],
                           s: s,
                           isLast: i == conv.messages.length - 1,
-                          onRetry: store.retry,
+                          onRetry: () async {
+                            if (!await store.retry() && context.mounted) {
+                              await showPaywall(context, s.t('limitQuestions', {'n': '${Plan.freeDailyQuestions}'}));
+                            }
+                          },
                           onDeleteFile: (a) => deleteFile(conv, a),
                         ),
                       ),
@@ -763,6 +783,18 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
               ),
               const Divider(),
               const SizedBox(height: 4),
+              ListTile(
+                leading: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFE0A100)),
+                title: Text(store.premium ? s.t('planPremium') : s.t('subscribe'),
+                    style: const TextStyle(fontWeight: FontWeight.w600)),
+                subtitle: store.premium
+                    ? null
+                    : Text(s.t('freeLeft', {'n': '${store.questionsLeft}'}), style: TextStyle(fontSize: 11.5, color: context.muted)),
+                onTap: () {
+                  Navigator.pop(context);
+                  openPlans(context);
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.tune_rounded),
                 title: Text(s.t('settings'), style: const TextStyle(fontWeight: FontWeight.w500)),

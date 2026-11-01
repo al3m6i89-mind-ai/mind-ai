@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_chat/core/plan.dart';
 import 'package:file_chat/core/store.dart';
 import 'package:file_chat/main.dart';
 import 'package:flutter/material.dart';
@@ -45,5 +46,17 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('notes.txt'), findsOneWidget);
     expect(store.pending, hasLength(1));
+  });
+
+  test('free plan stops after the daily questions', () async {
+    await store.addAttachment('n.txt', Uint8List.fromList(utf8.encode('x')), 'محادثة جديدة');
+    // Sending needs no network here: count only, the answer itself fails offline.
+    for (var i = 0; i < Plan.freeDailyQuestions; i++) {
+      expect(store.canAsk, isTrue);
+      store.debugCountQuestion();
+    }
+    expect(store.questionsLeft, 0);
+    expect(await store.send('another', 'محادثة جديدة'), isFalse);
+    expect(store.maxFileBytes, Plan.freeMaxFileBytes);
   });
 }

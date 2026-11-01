@@ -10,10 +10,11 @@ import 'package:uuid/uuid.dart';
 
 import 'ai.dart';
 import 'extract.dart';
+import 'billing.dart';
 import 'models.dart';
+import 'plan.dart';
 
 const _uuid = Uuid();
-const maxFileBytes = 15 * 1024 * 1024;
 
 /// Thrown when a picked file is refused; [key] is a string key, [name] the file.
 class AttachRejected implements Exception {
@@ -46,7 +47,38 @@ class AppStore extends ChangeNotifier {
     final root = Directory('${(await getApplicationDocumentsDirectory()).path}/file_chat');
     final store = AppStore(prefs, root);
     await store._load();
+    unawaited(store.billing.start());
     return store;
+  }
+
+  // ---------- plan ----------
+  late final billing = Billing(_setPremium);
+
+  /// Set only from what Google Play reports (see [Billing]).
+  bool get premium => _prefs.getBool('premium') ?? false;
+  void _setPremium(bool v) {
+    if (v == premium) return;
+    _prefs.setBool('premium', v);
+    notifyListeners();
+  }
+
+  int get maxFileBytes => premium ? Plan.premiumMaxFileBytes : Plan.freeMaxFileBytes;
+
+  String get _today {
+    final d = DateTime.now();
+    return '${d.year}-${d.month}-${d.day}';
+  }
+
+  int get questionsToday => _prefs.getString('qDay') == _today ? (_prefs.getInt('qCount') ?? 0) : 0;
+  int get questionsLeft => premium ? -1 : (Plan.freeDailyQuestions - questionsToday).clamp(0, Plan.freeDailyQuestions);
+  bool get canAsk => premium || questionsLeft > 0;
+
+  @visibleForTesting
+  void debugCountQuestion() => _countQuestion();
+
+  void _countQuestion() {
+    _prefs.setString('qDay', _today);
+    _prefs.setInt('qCount', questionsToday + 1);
   }
 
   // ---------- settings ----------
@@ -212,9 +244,12 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------- messaging ----------
-  Future<void> send(String text, String defaultTitle) async {
+  /// Returns false when the free plan's daily questions are used up.
+  Future<bool> send(String text, String defaultTitle) async {
     final t = text.trim();
-    if (streaming || processing > 0 || (t.isEmpty && pending.isEmpty)) return;
+    if (streaming || processing > 0 || (t.isEmpty && pending.isEmpty)) return true;
+    if (!canAsk) return false;
+    _countQuestion();
     final conv = await _ensureConversation(defaultTitle);
     final userMsg = Message(id: _uuid.v4(), role: Role.user, text: t, attachments: List.of(pending));
     pending.clear();
@@ -225,13 +260,22 @@ class AppStore extends ChangeNotifier {
       conv.title = oneLine.length > 50 ? '${oneLine.substring(0, 50)}…' : oneLine;
     }
     await _answer(conv);
+    return true;
   }
 
-  Future<void> retry() async {
+  /// A retry costs a question too; returns false when none are left.
+  Future<bool> retry() async {
     final conv = current;
-    if (conv == null || streaming || conv.messages.isEmpty) return;
+    if (conv == null || streaming || conv.messages.isEmpty) return true;
+    // Retrying a failed answer is free; asking again for a good one counts.
+    final failed = conv.messages.last.role == Role.assistant && conv.messages.last.status == MsgStatus.error;
+    if (!failed) {
+      if (!canAsk) return false;
+      _countQuestion();
+    }
     if (conv.messages.last.role == Role.assistant) conv.messages.removeLast();
     await _answer(conv);
+    return true;
   }
 
   Future<void> _answer(Conversation conv) async {
@@ -241,6 +285,7 @@ class AppStore extends ChangeNotifier {
     final client = AiClient(
       geminiKey: geminiKey,
       mistralKey: mistralKey,
+      preferPro: premium,
       geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
       onModelChanged: (m) => _prefs.setString('geminiModel', m),
     );
