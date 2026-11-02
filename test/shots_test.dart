@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:file_chat/core/models.dart';
+import 'package:file_chat/core/auth.dart';
 import 'package:file_chat/core/store.dart';
 import 'package:file_chat/main.dart';
 import 'package:flutter/material.dart';
@@ -28,9 +29,10 @@ void main() {
   final out = Platform.environment['SHOTS'];
   if (out == null) return;
 
-  Future<AppStore> makeStore(Map<String, Object> prefs) async {
+  Future<AppStore> makeStore(Map<String, Object> prefs, {bool adBlock = false, bool signedOut = false}) async {
     SharedPreferences.setMockInitialValues(prefs);
-    return AppStore(await SharedPreferences.getInstance(), await Directory.systemTemp.createTemp('fc'));
+    return AppStore(await SharedPreferences.getInstance(), await Directory.systemTemp.createTemp('fc'),
+        adBlockCheck: () async => adBlock, auth: signedOut ? Auth.signedOutForTest() : null);
   }
 
   Future<void> shot(WidgetTester t, AppStore store, String name, {Future<void> Function()? then}) async {
@@ -81,6 +83,12 @@ void main() {
       await t.tap(find.byTooltip('المحادثات'));
       await t.pump(const Duration(seconds: 1));
     });
+  });
+  testWidgets('login', (t) async {
+    await shot(t, (await t.runAsync(() => makeStore({'theme': 'light'}, signedOut: true)))!, 'login');
+  });
+  testWidgets('adblock', (t) async {
+    await shot(t, (await t.runAsync(() => makeStore({'theme': 'light'}, adBlock: true)))!, 'adblock');
   });
   testWidgets('plans', (t) async {
     final store = (await t.runAsync(() => makeStore({'theme': 'dark'})))!;

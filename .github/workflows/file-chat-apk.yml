@@ -16,7 +16,58 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Deploys the Cloudflare proxy that holds the AI keys, and hands its address
+  # to the app build. Skipped (the app then uses only the keyless free server)
+  # until the Cloudflare secrets are added to the repository.
+  proxy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      APP_TOKEN: ${{ secrets.APP_TOKEN }}
+      GEMINI_KEYS: ${{ secrets.GEMINI_KEYS }}
+      GROQ_KEYS: ${{ secrets.GROQ_KEYS }}
+      MISTRAL_KEYS: ${{ secrets.MISTRAL_KEYS }}
+      OPENROUTER_KEYS: ${{ secrets.OPENROUTER_KEYS }}
+      CEREBRAS_KEYS: ${{ secrets.CEREBRAS_KEYS }}
+      POLLINATIONS_TOKEN: ${{ secrets.POLLINATIONS_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node proxy/test.mjs
+      - name: Deploy proxy
+        id: deploy
+        working-directory: proxy
+        run: |
+          if [ -z "$CLOUDFLARE_API_TOKEN" ] || [ -z "$CLOUDFLARE_ACCOUNT_ID" ] || [ -z "$APP_TOKEN" ]; then
+            echo "::warning::Cloudflare secrets not set; the app will use only the keyless free server."
+            exit 0
+          fi
+          api="https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain"
+          auth="Authorization: Bearer $CLOUDFLARE_API_TOKEN"
+          sub=$(curl -sf -H "$auth" "$api" | jq -r '.result.subdomain // empty' || true)
+          if [ -z "$sub" ]; then
+            # A new account has no workers.dev name yet; make one.
+            sub="filechat-$(echo "$CLOUDFLARE_ACCOUNT_ID" | cut -c1-8)"
+            curl -sf -X PUT -H "$auth" -H 'Content-Type: application/json' -d "{\"subdomain\":\"$sub\"}" "$api" > /dev/null
+          fi
+          npx --yes wrangler@4 deploy
+          # Only the secrets that are set; values never reach the log.
+          node -e '
+            const names = ["APP_TOKEN","GEMINI_KEYS","GROQ_KEYS","MISTRAL_KEYS","OPENROUTER_KEYS","CEREBRAS_KEYS","POLLINATIONS_TOKEN"];
+            const out = {}; for (const n of names) if (process.env[n]) out[n] = process.env[n];
+            require("fs").writeFileSync("/tmp/secrets.json", JSON.stringify(out));'
+          npx --yes wrangler@4 secret bulk /tmp/secrets.json
+          rm /tmp/secrets.json
+          echo "url=https://file-chat-proxy.$sub.workers.dev" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: proxy
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
@@ -34,7 +85,10 @@ jobs:
       - run: flutter analyze
       - run: flutter test
       # 64-bit ARM only: every current Android phone, at about a third of the size.
-      - run: flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
+      - run: >-
+          flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
+          --dart-define=PROXY_URL=${{ needs.proxy.outputs.url }}
+          --dart-define=APP_TOKEN=${{ secrets.APP_TOKEN }}
       # The release key is kept by the owner, not in this public repo: the unsigned APK is
       # committed to dist/ and signed outside CI.
       - name: Commit unsigned APK

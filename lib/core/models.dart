@@ -17,6 +17,7 @@ class Attachment {
     this.note,
     this.geminiUri,
     this.geminiUriExpires,
+    this.geminiSlot,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -35,6 +36,9 @@ class Attachment {
   /// so it is not uploaded again for every question.
   String? geminiUri;
   DateTime? geminiUriExpires;
+
+  /// Which of the proxy's Gemini keys uploaded [geminiUri]; only that key can read it.
+  int? geminiSlot;
 
   bool get isImage => const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext);
   bool get isPdf => ext == 'pdf';
@@ -70,6 +74,7 @@ class Attachment {
         if (note != null) 'note': note,
         if (geminiUri != null) 'geminiUri': geminiUri,
         if (geminiUriExpires != null) 'geminiUriExpires': geminiUriExpires!.toIso8601String(),
+        if (geminiSlot != null) 'geminiSlot': geminiSlot,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -83,6 +88,7 @@ class Attachment {
         note: j['note'] as String?,
         geminiUri: j['geminiUri'] as String?,
         geminiUriExpires: DateTime.tryParse(j['geminiUriExpires'] as String? ?? ''),
+        geminiSlot: j['geminiSlot'] as int?,
         createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
       );
 }

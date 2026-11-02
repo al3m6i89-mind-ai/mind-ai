@@ -196,7 +196,6 @@ class _HomeScreenState extends State<HomeScreen> {
     final s = S(store.lang);
     final conv = store.current;
     _autoScroll(conv);
-    final gemini = store.geminiKey.isNotEmpty;
 
     return Scaffold(
       key: _scaffold,
@@ -213,20 +212,6 @@ class _HomeScreenState extends State<HomeScreen> {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(conv?.title ?? s.t('appName'), maxLines: 1, overflow: TextOverflow.ellipsis),
-              const SizedBox(height: 1),
-              Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(
-                  width: 6,
-                  height: 6,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: gemini ? Theme.of(context).colorScheme.primary : context.warn,
-                  ),
-                ),
-                const SizedBox(width: 5),
-                Text(gemini ? (store.mistralKey.isNotEmpty ? 'Gemini + Mistral' : 'Gemini') : s.t('freeMode'),
-                    style: TextStyle(fontSize: 11.5, color: context.muted, fontWeight: FontWeight.w500)),
-              ]),
             ],
           ),
         ),
@@ -290,8 +275,6 @@ class _EmptyState extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final store = context.watch<AppStore>();
-    final needsKey = store.geminiKey.isEmpty;
     final actions = [
       (Icons.folder_open_rounded, s.t('pickFile'), s.t('pickFileHint'), home.pickFiles),
       (Icons.photo_library_rounded, s.t('pickImage'), s.t('pickImageHint'), home.pickImages),
@@ -324,29 +307,6 @@ class _EmptyState extends StatelessWidget {
             Text(s.t('emptyText'), textAlign: TextAlign.center, style: TextStyle(color: context.muted, height: 1.55)),
           ]),
         ),
-        if (needsKey) ...[
-          const SizedBox(height: 18),
-          _FadeIn(
-            delay: 60,
-            child: Material(
-              color: context.warn.withValues(alpha: 0.10),
-              borderRadius: BorderRadius.circular(16),
-              child: InkWell(
-                borderRadius: BorderRadius.circular(16),
-                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const SettingsScreen())),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Row(children: [
-                    Icon(Icons.key_rounded, color: context.warn),
-                    const SizedBox(width: 12),
-                    Expanded(child: Text(s.t('err_missingKey'), style: const TextStyle(height: 1.45))),
-                    Icon(Icons.chevron_right_rounded, color: context.muted),
-                  ]),
-                ),
-              ),
-            ),
-          ),
-        ],
         const SizedBox(height: 24),
         _FadeIn(
           delay: 90,

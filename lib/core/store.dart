@@ -8,7 +8,9 @@ import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
 
+import 'adblock.dart';
 import 'ai.dart';
+import 'auth.dart';
 import 'extract.dart';
 import 'billing.dart';
 import 'models.dart';
@@ -26,7 +28,13 @@ class AttachRejected implements Exception {
 /// All app state. Conversations live as one JSON file each in the app's private
 /// folder; attached files are copied next to them.
 class AppStore extends ChangeNotifier {
-  AppStore(this._prefs, this._root);
+  AppStore(this._prefs, this._root, {Auth? auth, this.adBlockCheck = detectAdBlocker}) : auth = auth ?? Auth.disabled();
+
+  /// Google or phone sign-in (disabled until Firebase is set up for the build).
+  final Auth auth;
+
+  /// Whether the phone blocks ad servers; replaced in tests.
+  final Future<bool> Function() adBlockCheck;
 
   final SharedPreferences _prefs;
   final Directory _root;
@@ -45,7 +53,7 @@ class AppStore extends ChangeNotifier {
   static Future<AppStore> open() async {
     final prefs = await SharedPreferences.getInstance();
     final root = Directory('${(await getApplicationDocumentsDirectory()).path}/file_chat');
-    final store = AppStore(prefs, root);
+    final store = AppStore(prefs, root, auth: await Auth.start());
     await store._load();
     unawaited(store.billing.start());
     return store;
@@ -91,19 +99,6 @@ class AppStore extends ChangeNotifier {
   ThemeMode get themeMode => ThemeMode.values.asNameMap()[_prefs.getString('theme')] ?? ThemeMode.system;
   Future<void> setThemeMode(ThemeMode m) async {
     await _prefs.setString('theme', m.name);
-    notifyListeners();
-  }
-
-  String get geminiKey => _prefs.getString('geminiKey') ?? '';
-  Future<void> setGeminiKey(String v) async {
-    await _prefs.setString('geminiKey', v.trim());
-    notifyListeners();
-  }
-
-  /// Optional backup server, used when Gemini is busy.
-  String get mistralKey => _prefs.getString('mistralKey') ?? '';
-  Future<void> setMistralKey(String v) async {
-    await _prefs.setString('mistralKey', v.trim());
     notifyListeners();
   }
 
@@ -283,8 +278,6 @@ class AppStore extends ChangeNotifier {
     conv.updatedAt = DateTime.now();
     _sort();
     final client = AiClient(
-      geminiKey: geminiKey,
-      mistralKey: mistralKey,
       preferPro: premium,
       geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
       onModelChanged: (m) => _prefs.setString('geminiModel', m),
@@ -303,12 +296,13 @@ class AppStore extends ChangeNotifier {
               ..note = null;
           case AiReset():
             reply.text = '';
-          case AiVia(:final name):
-            reply.via = name;
+          case AiVia():
+            break;
           case AiTrace(:final line):
+            // Kept with the message for diagnosis, never shown.
             reply.trace.add(line);
-          case AiStatus(:final code, :final name):
-            reply.note = code == 'switching' ? 'switching:$name' : code;
+          case AiStatus(:final code):
+            reply.note = code;
         }
         notifyListeners();
       },

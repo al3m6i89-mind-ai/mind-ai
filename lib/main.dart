@@ -3,7 +3,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'core/store.dart';
-import 'ui/home.dart';
+import 'ui/gate.dart';
 import 'ui/theme.dart';
 
 Future<void> main() async {
@@ -31,7 +31,7 @@ class FileChatApp extends StatelessWidget {
         GlobalWidgetsLocalizations.delegate,
         GlobalCupertinoLocalizations.delegate,
       ],
-      home: const HomeScreen(),
+      home: const StartGate(),
     );
   }
 }

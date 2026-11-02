@@ -151,18 +151,6 @@ class MessageView extends StatelessWidget {
           ),
         if (m.status != MsgStatus.streaming)
           Row(children: [
-            if (m.via != null && m.status == MsgStatus.complete)
-              Padding(
-                padding: const EdgeInsetsDirectional.only(end: 4),
-                child: Text(s.t('via', {'name': m.via!}), style: TextStyle(color: context.muted, fontSize: 12)),
-              ),
-            if (m.trace.isNotEmpty)
-              IconButton(
-                tooltip: s.t('details'),
-                visualDensity: VisualDensity.compact,
-                icon: Icon(Icons.info_outline_rounded, size: 18, color: context.muted),
-                onPressed: () => _showTrace(context),
-              ),
             if (m.text.isNotEmpty)
               IconButton(
                 tooltip: s.t('copy'),
@@ -182,37 +170,7 @@ class MessageView extends StatelessWidget {
     );
   }
 
-  void _showTrace(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(s.t('details'), style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
-              const SizedBox(height: 6),
-              Text(s.t('traceHint'), style: TextStyle(color: ctx.muted, fontSize: 13)),
-              const SizedBox(height: 12),
-              Flexible(
-                child: SingleChildScrollView(
-                  child: SelectableText(message.trace.join('\n'),
-                      textDirection: TextDirection.ltr, style: const TextStyle(fontSize: 12.5, height: 1.6)),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-
-  String _note(String note) {
-    if (note.startsWith('switching:')) return s.t('switching', {'name': note.substring(10)});
-    return s.t('waitingRetry');
-  }
+  String _note(String note) => s.t('waitingRetry');
 
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: message.text));

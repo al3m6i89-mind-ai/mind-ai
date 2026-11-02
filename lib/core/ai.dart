@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -44,34 +45,56 @@ class AiTrace extends AiEvent {
 }
 
 const _system = '''
-You are the assistant of a file and image reading app. People rely on your answers about their own documents (invoices, contracts, reports, spreadsheets, photos), so accuracy matters more than anything else. Reply in the language the user writes in (Arabic or English), clearly and without filler.
+You are the assistant of a file and image reading app. People rely on your answers about their own documents (invoices, contracts, reports, spreadsheets, photos), so accuracy matters more than anything else. Reply in the language the user writes in (Arabic or English).
+
+Be brief: give the exact answer first, in as few words as it needs. No introduction, no repeating the question, no closing offers. Use a short list only when the answer has several items. Brevity never removes a required item, number or the source line.
 
 When files or images are attached to the conversation, every answer about them must come from their content and nothing else:
-- Read the whole file before answering: every page, slide, sheet, table, header, footnote and every part of an image. Do not stop at the first match; when the question asks for all items, totals or a list, include every one that appears, and say how many there are.
-- Copy numbers, amounts, dates, names, codes and quotes exactly as written, with the same digits, currency and units. Never round, convert or "correct" them. If you calculate something (a sum, a difference), show the values you used so the user can check them.
-- Never add facts, figures or assumptions that are not in the files, and never fill gaps from general knowledge. If something is partly there, give the part that is there and say clearly what is missing.
-- If text in a file or image is blurry, cut off, handwritten or otherwise hard to read, say which part is unclear instead of guessing it.
+- Read the whole file before answering: every page, slide, sheet, table, header, footnote and every part of an image. When the question asks for all items, totals or a list, include every one that appears.
+- Copy numbers, amounts, dates, names, codes and quotes exactly as written, with the same digits, currency and units. Never round, convert or "correct" them. If you calculate something, show the values you used in one line.
+- Never add facts, figures or assumptions that are not in the files, and never fill gaps from general knowledge. If something is partly there, give the part that is there and say what is missing.
+- If text is blurry, cut off or hard to read, say which part is unclear instead of guessing it.
 - If the answer is not in the files, reply exactly: "لم أجد هذه المعلومة في الملفات التي رفعتها، لذلك لا أستطيع تأكيد الإجابة." (in English: "I couldn't find this information in the files you uploaded, so I can't confirm an answer.") Do not follow it with a guess.
-- If the files contradict each other or themselves, show both values and where each appears.
-- Separate what the file states explicitly from anything you infer, and label the inference as such.
-- End every answer that uses a file with a line "المصدر:" (or "Source:") naming the file and, only when certain, the page (PDF), slide number (PowerPoint), sheet and cell (Excel) or section heading (Word). Never invent a page or cell.
-When nothing is attached, answer normally as a helpful assistant, and say so if you are unsure.
+- If the files contradict each other, show both values and where each appears.
+- End every answer that uses a file with a line "المصدر:" (or "Source:") naming the file and, only when certain, the page (PDF), slide (PowerPoint), sheet and cell (Excel) or section heading (Word). Never invent a page or cell.
+When nothing is attached, answer briefly and accurately as a helpful assistant, and say so if you are unsure.
 ''';
 
-enum Backend { gemini, mistral, free }
+/// How a server is spoken to: Gemini's own API, or the OpenAI chat format
+/// that Groq, Mistral, OpenRouter, Cerebras and Pollinations share.
+enum Backend { gemini, openai }
 
+/// One server and model in the fallback chain. [provider] is the proxy's
+/// short name for the service (g, q, m, o, c, p).
 class Attempt {
-  const Attempt(this.backend, this.model, this.label);
+  const Attempt(this.backend, this.model, this.provider, {this.vision = false, this.direct = false});
   final Backend backend;
   final String model;
-  final String label;
+  final String provider;
+
+  /// Reads images itself (Gemini always does).
+  final bool vision;
+
+  /// Called straight from the phone instead of through the proxy (the keyless
+  /// free server, the last resort when the proxy itself is unreachable).
+  final bool direct;
+
+  bool get readsImages => backend == Backend.gemini || vision;
+
+  static Attempt? fromJson(Object? j) {
+    if (j is! Map) return null;
+    final model = j['model'], p = j['p'];
+    if (model is! String || p is! String) return null;
+    return Attempt(j['backend'] == 'gemini' ? Backend.gemini : Backend.openai, model, p, vision: j['vision'] == true);
+  }
+
   @override
-  String toString() => '$backend/$model';
+  String toString() => '${direct ? 'direct:' : ''}$provider/$model';
 }
 
 /// Why one attempt failed, and what that means for the next ones.
 class _Fail implements Exception {
-  _Fail(this.code, {this.retryable = false, this.backendDead = false, this.replacement, this.detail});
+  _Fail(this.code, {this.retryable = false, this.proxyDead = false, this.providerDead = false, this.replacement, this.detail});
   final String code;
 
   /// The server's own words, for the trace.
@@ -80,49 +103,55 @@ class _Fail implements Exception {
   /// Busy, rate limited or a network drop: worth trying again later.
   final bool retryable;
 
-  /// Bad key: skip every model of this backend.
-  final bool backendDead;
+  /// The proxy refused the app: skip everything that goes through it.
+  final bool proxyDead;
+
+  /// The proxy has no key for this service: skip all its models.
+  final bool providerDead;
 
   /// A retired Gemini model's successor, tried next.
   final String? replacement;
 }
 
-/// Base URLs, overridden in tests.
-class Endpoints {
-  const Endpoints({
-    this.gemini = 'https://generativelanguage.googleapis.com',
-    this.mistral = 'https://api.mistral.ai',
-    this.free = 'https://text.pollinations.ai',
-  });
-  final String gemini;
-  final String mistral;
-  final String free;
+/// The app's own server, which holds the AI services' keys so they never ship
+/// inside the app. Set at build time with --dart-define.
+class Proxy {
+  const Proxy(this.url, this.token);
+  static const build = Proxy(String.fromEnvironment('PROXY_URL'), String.fromEnvironment('APP_TOKEN'));
+  final String url;
+  final String token;
+  bool get enabled => url.isNotEmpty;
+  String get base => url.endsWith('/') ? url.substring(0, url.length - 1) : url;
 }
 
-/// Streams a reply, moving through a chain of servers so a busy or failing one
-/// never ends the answer: Gemini models first (they read PDFs and images
-/// themselves), then Mistral when its key is set, then a free server that
-/// needs no key. When every one is busy it waits and goes round again.
+/// Streams a reply, moving through a chain of AI services behind the proxy so
+/// a busy or failing one never ends the answer. The chain comes from the
+/// proxy's /config (so it can change without an app update), with a built-in
+/// copy as fallback. When every one is busy it waits and goes round again.
 class AiClient {
   AiClient({
-    required this.geminiKey,
-    this.mistralKey = '',
+    this.proxy = Proxy.build,
+    this.freeUrl = 'https://text.pollinations.ai',
     this.preferPro = false,
     this.geminiModel = defaultGeminiModel,
     this.onModelChanged,
-    this.endpoints = const Endpoints(),
-    this.roundPauses = const [Duration(seconds: 4), Duration(seconds: 12), Duration(seconds: 25)],
+    this.roundPauses = const [
+      Duration(seconds: 3),
+      Duration(seconds: 8),
+      Duration(seconds: 15),
+      Duration(seconds: 30),
+      Duration(seconds: 45),
+    ],
     this.filePollInterval = const Duration(seconds: 2),
   });
 
+  final Proxy proxy;
+  final String freeUrl;
   final Duration filePollInterval;
 
   /// Google's alias for its current Flash model, so the app keeps working when
   /// older versions are retired.
   static const defaultGeminiModel = 'gemini-flash-latest';
-
-  final String geminiKey;
-  final String mistralKey;
   final String geminiModel;
 
   /// Paid plan: start with Gemini Pro, the most accurate model.
@@ -130,7 +159,6 @@ class AiClient {
 
   /// Called when Google retired [geminiModel] and its successor answered.
   final void Function(String model)? onModelChanged;
-  final Endpoints endpoints;
 
   /// Pauses before the second and later rounds through the chain.
   final List<Duration> roundPauses;
@@ -141,38 +169,87 @@ class AiClient {
   static const maxInlineFile = 4 * 1024 * 1024;
   static const maxGeminiPdf = 50 * 1024 * 1024;
 
-  List<Attempt> chain() => [
-        if (geminiKey.trim().isNotEmpty)
-          for (final m in {
-            if (preferPro) 'gemini-pro-latest',
-            geminiModel,
-            defaultGeminiModel,
-            'gemini-pro-latest',
-            'gemini-flash-lite-latest',
-          })
-            Attempt(Backend.gemini, m, 'Gemini'),
-        if (mistralKey.trim().isNotEmpty) ...[
-          const Attempt(Backend.mistral, 'mistral-medium-latest', 'Mistral'),
-          const Attempt(Backend.mistral, 'mistral-small-latest', 'Mistral'),
-        ],
-        const Attempt(Backend.free, 'openai', 'الخادم المجاني'),
-      ];
+  /// Used when the proxy's /config cannot be read. Mirrors proxy/src/index.js.
+  static const defaultChain = [
+    Attempt(Backend.gemini, 'gemini-flash-latest', 'g'),
+    Attempt(Backend.gemini, 'gemini-pro-latest', 'g'),
+    Attempt(Backend.gemini, 'gemini-flash-lite-latest', 'g'),
+    Attempt(Backend.openai, 'meta-llama/llama-4-scout-17b-16e-instruct', 'q', vision: true),
+    Attempt(Backend.openai, 'openai/gpt-oss-120b', 'q'),
+    Attempt(Backend.openai, 'llama-3.3-70b-versatile', 'q'),
+    Attempt(Backend.openai, 'mistral-medium-latest', 'm', vision: true),
+    Attempt(Backend.openai, 'mistral-small-latest', 'm', vision: true),
+    Attempt(Backend.openai, 'gpt-oss-120b', 'c'),
+    Attempt(Backend.openai, 'openrouter/free', 'o', vision: true),
+    Attempt(Backend.openai, 'openai', 'p', vision: true),
+  ];
+
+  /// The keyless free server called directly, so answers keep coming even if
+  /// the proxy is down.
+  static const directFree = Attempt(Backend.openai, 'openai', 'p', vision: true, direct: true);
+
+  static List<Attempt>? _config;
+  static DateTime? _configAt;
+
+  @visibleForTesting
+  static void resetConfig() => _config = _configAt = null;
+
+  /// The proxy's chain, cached for ten minutes.
+  Future<List<Attempt>> _proxyChain() async {
+    final at = _configAt;
+    if (_config != null && at != null && DateTime.now().difference(at) < const Duration(minutes: 10)) return _config!;
+    try {
+      final r = await http
+          .get(Uri.parse('${proxy.base}/config'), headers: {'x-app-token': proxy.token})
+          .timeout(const Duration(seconds: 10));
+      if (r.statusCode == 200) {
+        final list = [
+          for (final e in (jsonDecode(r.body)['chain'] as List? ?? const [])) ?Attempt.fromJson(e),
+        ];
+        _config = list;
+        _configAt = DateTime.now();
+        return list;
+      }
+    } catch (_) {}
+    return defaultChain;
+  }
+
+  /// The full order for this reply.
+  Future<List<Attempt>> chain() async {
+    final base = proxy.enabled ? await _proxyChain() : const <Attempt>[];
+    final gemini = base.where((a) => a.backend == Backend.gemini).map((a) => a.model).toList();
+    return [
+      if (gemini.isNotEmpty)
+        for (final m in {
+          if (preferPro && gemini.contains('gemini-pro-latest')) 'gemini-pro-latest',
+          if (gemini.contains(defaultGeminiModel)) geminiModel,
+          ...gemini,
+        })
+          Attempt(Backend.gemini, m, 'g'),
+      ...base.where((a) => a.backend != Backend.gemini),
+      directFree,
+    ];
+  }
 
   /// True when a file can only be read by Gemini (a scanned PDF has no text layer).
   static bool needsGemini(Conversation conv) =>
       conv.attachments.any((a) => a.isPdf && (a.extractedText ?? '').trim().isEmpty);
 
+  static bool hasImages(Conversation conv) => conv.attachments.any((a) => a.isImage);
+
   Stream<AiEvent> reply(Conversation conv) async* {
-    var attempts = chain();
-    // Accuracy before speed: a server that cannot read the file would only answer
-    // "not found", so keep trying Gemini instead.
-    if (geminiKey.trim().isNotEmpty && needsGemini(conv)) {
+    var attempts = await chain();
+    // Accuracy before speed: a model that cannot see the file would only answer
+    // "not found" or guess, so it is never asked.
+    if (hasImages(conv)) attempts = attempts.where((a) => a.readsImages).toList();
+    if (needsGemini(conv) && attempts.any((a) => a.backend == Backend.gemini)) {
       attempts = attempts.where((a) => a.backend == Backend.gemini).toList();
     }
     final dead = <String>{};
-    final deadBackends = <Backend>{};
+    final deadProviders = <String>{};
+    var proxyDead = false;
+    bool skip(Attempt a) => dead.contains('$a') || (!a.direct && (proxyDead || deadProviders.contains(a.provider)));
     String? lastError;
-    String? via;
     for (var round = 0; round <= roundPauses.length; round++) {
       if (round > 0) {
         yield AiStatus('waiting');
@@ -180,67 +257,70 @@ class AiClient {
       }
       for (var i = 0; i < attempts.length; i++) {
         final a = attempts[i];
-        if (dead.contains('$a') || deadBackends.contains(a.backend)) continue;
+        if (skip(a)) continue;
         var wrote = false;
         try {
           await for (final text in _run(a, conv)) {
-            if (via != a.label) {
-              via = a.label;
-              yield AiVia(a.label);
-            }
             wrote = true;
             yield AiText(text);
           }
           if (!wrote) throw _Fail('empty', retryable: true);
           return;
         } on _Fail catch (f) {
-          lastError = f.code;
+          if (lastError == null || f.code == 'blocked' || const {'busy', 'rateLimited', 'timeout', 'network', 'offline'}.contains(f.code)) {
+            lastError = f.code;
+          }
           final d = f.detail == null ? '' : ' — ${f.detail}';
-          yield AiTrace('${a.model}: ${f.code}$d');
+          yield AiTrace('$a: ${f.code}$d');
           if (f.code == 'blocked') throw AiException('blocked');
-          if (f.backendDead) deadBackends.add(a.backend);
+          if (f.proxyDead) proxyDead = true;
+          if (f.providerDead) deadProviders.add(a.provider);
           if (!f.retryable) dead.add('$a');
           final r = f.replacement;
           if (r != null && !attempts.any((x) => x.model == r)) {
-            attempts.insert(i + 1, Attempt(a.backend, r, a.label));
+            attempts.insert(i + 1, Attempt(a.backend, r, a.provider));
             onModelChanged?.call(r);
           }
           if (wrote) yield AiReset();
-          final next = attempts.skip(i + 1).where((x) => !dead.contains('$x') && !deadBackends.contains(x.backend));
-          if (next.isNotEmpty && next.first.label != a.label) yield AiStatus('switching', next.first.label);
         }
       }
-      if (attempts.every((a) => dead.contains('$a') || deadBackends.contains(a.backend))) break;
+      if (attempts.every(skip)) break;
     }
-    throw AiException(lastError ?? 'busy');
+    throw AiException(const {'busy', 'rateLimited', 'timeout', 'network', 'offline', 'tooLargeTotal', 'fileFailed'}.contains(lastError)
+        ? lastError!
+        : 'busy');
   }
+
+  Map<String, String> _headers(Attempt a, [int? slot]) => {
+        if (!a.direct && proxy.token.isNotEmpty) 'x-app-token': proxy.token,
+        if (slot != null) 'x-key-slot': '$slot',
+      };
+
+  String _url(Attempt a, String path) => a.direct ? '$freeUrl$path' : '${proxy.base}/${a.provider}$path';
 
   Stream<String> _run(Attempt a, Conversation conv) async* {
     final http.Request req;
     switch (a.backend) {
       case Backend.gemini:
-        req = http.Request('POST', Uri.parse('${endpoints.gemini}/v1beta/models/${a.model}:streamGenerateContent?alt=sse'))
-          ..headers.addAll({'Content-Type': 'application/json', 'x-goog-api-key': geminiKey.trim()})
+        final (contents, slot) = await _geminiContents(a, conv);
+        req = http.Request('POST', Uri.parse(_url(a, '/v1beta/models/${a.model}:streamGenerateContent?alt=sse')))
+          ..headers.addAll({'Content-Type': 'application/json', ..._headers(a, slot)})
           ..body = jsonEncode({
-            'contents': await _geminiContents(conv),
+            'contents': contents,
             'systemInstruction': {
               'parts': [
                 {'text': _system},
               ],
             },
           });
-      case Backend.mistral:
-        req = http.Request('POST', Uri.parse('${endpoints.mistral}/v1/chat/completions'))
-          ..headers.addAll({'Content-Type': 'application/json', 'Authorization': 'Bearer ${mistralKey.trim()}'})
+      case Backend.openai:
+        req = http.Request('POST', Uri.parse(_url(a, a.direct ? '/openai' : '/v1/chat/completions')))
+          ..headers.addAll({'Content-Type': 'application/json', ..._headers(a)})
           ..body = jsonEncode({
             'model': a.model,
             'stream': true,
-            'messages': await _openAiMessages(conv, mistralImages: true),
+            'messages': await _openAiMessages(conv, images: a.readsImages, stringImages: a.provider == 'm'),
           });
-      case Backend.free:
-        req = http.Request('POST', Uri.parse('${endpoints.free}/openai'))
-          ..headers['Content-Type'] = 'application/json'
-          ..body = jsonEncode({'model': a.model, 'stream': true, 'messages': await _openAiMessages(conv)});
     }
 
     final client = http.Client();
@@ -257,7 +337,7 @@ class AiClient {
       }
       if (res.statusCode >= 400) {
         final body = await res.stream.bytesToString();
-        throw _failFor(a, res.statusCode, body);
+        throw _failFor(a, res.statusCode, body, res.headers);
       }
       final sse = (res.headers['content-type'] ?? '').contains('event-stream');
       if (!sse) {
@@ -310,14 +390,18 @@ class AiClient {
     }
   }
 
-  _Fail _failFor(Attempt a, int code, String body) {
+  _Fail _failFor(Attempt a, int code, String body, Map<String, String> headers) {
     var msg = body;
     try {
       msg = (jsonDecode(body)['error']?['message'] as String?) ?? body;
     } catch (_) {}
     final detail = 'HTTP $code ${_short(msg)}';
+    // The proxy's own answers are marked, so they are not mistaken for the service's.
+    if (headers['x-proxy-error'] == 'token') return _Fail('busy', proxyDead: true, detail: detail);
+    if (headers['x-proxy-error'] == 'unconfigured') return _Fail('busy', providerDead: true, detail: detail);
     if (code == 401 || code == 403 || (code == 400 && msg.contains('API key'))) {
-      return _Fail(a.backend == Backend.mistral ? 'badMistralKey' : 'badKey', backendDead: true, detail: detail);
+      // One of the proxy's keys is bad; the next attempt draws another.
+      return _Fail('badKey', detail: detail);
     }
     if (code == 404 && a.backend == Backend.gemini) {
       return _Fail('busy', replacement: replacementModel(msg, {a.model}), detail: detail);
@@ -325,7 +409,7 @@ class AiClient {
     if (code == 429) return _Fail('rateLimited', retryable: true, detail: detail);
     if (code >= 500) return _Fail('busy', retryable: true, detail: detail);
     if (code == 413) return _Fail('tooLargeTotal', detail: detail);
-    return _Fail('HTTP $code: ${_short(msg)}', detail: detail);
+    return _Fail('HTTP $code', detail: detail);
   }
 
   static String _short(String s) {
@@ -353,9 +437,12 @@ class AiClient {
 
   /// Gemini reads PDFs and images itself. Attachments are sent in the turn
   /// where they were uploaded, so later questions still "see" every file.
-  Future<List<Map<String, dynamic>>> _geminiContents(Conversation conv) async {
+  /// Returns the proxy key slot the uploaded files belong to, if any: a file
+  /// in Gemini's store can only be read with the key that uploaded it.
+  Future<(List<Map<String, dynamic>>, int?)> _geminiContents(Attempt via, Conversation conv) async {
     final contents = <Map<String, dynamic>>[];
     var inlineBytes = 0;
+    int? slot;
     for (final m in _history(conv)) {
       final role = m.role == Role.assistant ? 'model' : 'user';
       final parts = <Map<String, dynamic>>[];
@@ -372,9 +459,11 @@ class AiClient {
           });
         } else {
           // Big files go through Gemini's file store, which takes PDFs up to 50 MB.
+          final (uri, s) = await _geminiFile(via, a, bytes, slot);
+          slot = s;
           parts.add({'text': '[ملف مرفق: ${a.name}]'});
           parts.add({
-            'file_data': {'mime_type': a.mime, 'file_uri': await _geminiFile(a, bytes)},
+            'file_data': {'mime_type': a.mime, 'file_uri': uri},
           });
         }
       }
@@ -386,25 +475,29 @@ class AiClient {
         contents.add({'role': role, 'parts': parts});
       }
     }
-    return contents;
+    return (contents, slot);
   }
 
   /// Uploads [a] to Gemini's file store once (resumable upload) and waits until
-  /// Google has processed it. The link is reused until shortly before it expires.
-  Future<String> _geminiFile(Attachment a, List<int> bytes) async {
+  /// Google has processed it. The link is reused until shortly before it
+  /// expires, as long as it belongs to the same key as the other files.
+  Future<(String, int?)> _geminiFile(Attempt via, Attachment a, List<int> bytes, int? slot) async {
     final cached = a.geminiUri;
     final expires = a.geminiUriExpires;
-    if (cached != null && expires != null && expires.isAfter(DateTime.now().add(const Duration(hours: 1)))) {
-      return cached;
+    if (cached != null &&
+        expires != null &&
+        expires.isAfter(DateTime.now().add(const Duration(hours: 1))) &&
+        (slot == null || slot == a.geminiSlot)) {
+      return (cached, a.geminiSlot);
     }
-    final key = geminiKey.trim();
+    const files = Attempt(Backend.gemini, 'files', 'g');
     final client = http.Client();
     try {
       final start = await client
           .post(
-            Uri.parse('${endpoints.gemini}/upload/v1beta/files'),
+            Uri.parse(_url(via, '/upload/v1beta/files')),
             headers: {
-              'x-goog-api-key': key,
+              ..._headers(via, slot),
               'X-Goog-Upload-Protocol': 'resumable',
               'X-Goog-Upload-Command': 'start',
               'X-Goog-Upload-Header-Content-Length': '${bytes.length}',
@@ -418,38 +511,39 @@ class AiClient {
           .timeout(const Duration(seconds: 60));
       final uploadUrl = start.headers['x-goog-upload-url'];
       if (start.statusCode >= 400 || uploadUrl == null) {
-        throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), start.statusCode, start.body);
+        throw _failFor(files, start.statusCode, start.body, start.headers);
       }
+      final used = int.tryParse(start.headers['x-key-slot'] ?? '') ?? slot;
       final done = await client
           .post(
             Uri.parse(uploadUrl),
             headers: {
+              ..._headers(via, used),
               'X-Goog-Upload-Offset': '0',
               'X-Goog-Upload-Command': 'upload, finalize',
             },
             body: bytes,
           )
           .timeout(const Duration(minutes: 5));
-      if (done.statusCode >= 400) {
-        throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), done.statusCode, done.body);
-      }
+      if (done.statusCode >= 400) throw _failFor(files, done.statusCode, done.body, done.headers);
       var file = (jsonDecode(done.body) as Map<String, dynamic>)['file'] as Map<String, dynamic>;
       // PDFs are processed for a moment before they can be read.
       for (var i = 0; i < 60 && file['state'] == 'PROCESSING'; i++) {
         await Future<void>.delayed(filePollInterval);
         final r = await client
-            .get(Uri.parse('${endpoints.gemini}/v1beta/${file['name']}'), headers: {'x-goog-api-key': key})
+            .get(Uri.parse(_url(via, '/v1beta/${file['name']}')), headers: _headers(via, used))
             .timeout(const Duration(seconds: 30));
-        if (r.statusCode >= 400) throw _failFor(const Attempt(Backend.gemini, 'files', 'Gemini'), r.statusCode, r.body);
+        if (r.statusCode >= 400) throw _failFor(files, r.statusCode, r.body, r.headers);
         file = jsonDecode(r.body) as Map<String, dynamic>;
       }
       if (file['state'] == 'FAILED') throw _Fail('fileFailed', detail: 'Gemini could not process ${a.name}');
       final uri = file['uri'] as String;
       a
         ..geminiUri = uri
+        ..geminiSlot = used
         ..geminiUriExpires = DateTime.tryParse(file['expirationTime'] as String? ?? '') ??
             DateTime.now().add(const Duration(hours: 47));
-      return uri;
+      return (uri, used);
     } on TimeoutException {
       throw _Fail('timeout', retryable: true, detail: 'upload of ${a.name}');
     } on SocketException {
@@ -461,9 +555,9 @@ class AiClient {
     }
   }
 
-  /// OpenAI-style messages for Mistral and the free server: document and PDF
-  /// text as read on the phone, images inline.
-  Future<List<Map<String, dynamic>>> _openAiMessages(Conversation conv, {bool mistralImages = false}) async {
+  /// OpenAI-style messages: document and PDF text as read on the phone, images
+  /// inline (Mistral wants the data URL as a plain string).
+  Future<List<Map<String, dynamic>>> _openAiMessages(Conversation conv, {bool images = true, bool stringImages = false}) async {
     final messages = <Map<String, dynamic>>[
       {'role': 'system', 'content': _system},
     ];
@@ -471,13 +565,13 @@ class AiClient {
       final role = m.role == Role.assistant ? 'assistant' : 'user';
       final parts = <Map<String, dynamic>>[];
       for (final a in m.attachments) {
-        final bytes = a.isImage ? await _bytes(a) : null;
+        final bytes = a.isImage && images ? await _bytes(a) : null;
         if (bytes != null) {
           final url = 'data:${a.mime};base64,${base64Encode(bytes)}';
           parts.add({'type': 'text', 'text': '[صورة مرفقة: ${a.name}]'});
           parts.add({
             'type': 'image_url',
-            'image_url': mistralImages ? url : {'url': url},
+            'image_url': stringImages ? url : {'url': url},
           });
         } else {
           parts.add({'type': 'text', 'text': _asText(a)});
