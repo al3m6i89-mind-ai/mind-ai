@@ -1,7 +1,7 @@
 {
-  "version": "1.5.2",
-  "build": 29,
+  "version": "1.6.0",
+  "build": 30,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• الحساب والاشتراك والمساعدة صارت داخل الإعدادات\n• التحديثات في آخر الإعدادات\n• الدخول بحساب Google",
-  "notes_en": "• Account, subscription and help are now in Settings\n• Updates moved to the bottom of Settings\n• Sign in with Google"
+  "notes_ar": "• الدخول بالبريد الإلكتروني (Gmail وHotmail وOutlook وYahoo وiCloud)\n• الأسئلة المجانية تُحسب على السيرفر لكل حساب وجهاز\n• حماية أقوى للخدمة\n• زر حذف الحساب",
+  "notes_en": "• Sign in with email (Gmail, Hotmail, Outlook, Yahoo, iCloud)\n• Free questions are counted on the server per account and device\n• Stronger service protection\n• Delete account button"
 }
