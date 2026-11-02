@@ -8,10 +8,11 @@ import 'package:flutter/foundation.dart';
 /// they identify the project and are not secret). Empty until the project is
 /// set up, and then sign-in is skipped instead of showing buttons that fail.
 class FirebaseSetup {
-  static const apiKey = String.fromEnvironment('FIREBASE_API_KEY');
-  static const appId = String.fromEnvironment('FIREBASE_APP_ID');
-  static const senderId = String.fromEnvironment('FIREBASE_SENDER_ID');
-  static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID');
+  static const apiKey = String.fromEnvironment('FIREBASE_API_KEY', defaultValue: 'AIzaSyCsOnwLgQkuGN3V9-WOJBdzsmEWk2M-XvI');
+  static const appId =
+      String.fromEnvironment('FIREBASE_APP_ID', defaultValue: '1:463476849908:android:d32305ad3915b7c0e8b2a1');
+  static const senderId = String.fromEnvironment('FIREBASE_SENDER_ID', defaultValue: '463476849908');
+  static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID', defaultValue: 'file-chat-224b4');
   static bool get configured => apiKey.isNotEmpty && appId.isNotEmpty && projectId.isNotEmpty;
 }
 
