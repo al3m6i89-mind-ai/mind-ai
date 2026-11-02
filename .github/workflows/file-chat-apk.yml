@@ -153,9 +153,10 @@ jobs:
           keytool -genkeypair -keystore t.jks -storepass android -keypass android -alias t -keyalg RSA -dname CN=t -validity 3 -noprompt
           BT=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -1)
           $BT/apksigner sign --ks t.jks --ks-pass pass:android --out test.apk app-release.apk
+      # Android 11 x86_64 images translate ARM code, so the arm64 APK runs as shipped.
       - uses: reactivecircus/android-emulator-runner@v2
         with:
-          api-level: 34
+          api-level: 30
           arch: x86_64
           target: google_apis
           disable-animations: true
