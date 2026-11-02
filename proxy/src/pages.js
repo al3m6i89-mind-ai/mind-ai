@@ -52,6 +52,7 @@ const privacy = page('سياسة الخصوصية — قارئ الملفات', 
 <h2>الحساب</h2>
 <ul>
 <li>تسجيل الدخول عبر Google Firebase بحساب Google أو البريد الإلكتروني. نحصل على معرّف حسابك وبريدك واسمك وصورتك إن وُجدت.</li>
+<li>يحفظ خادمنا معرّف حسابك وبريدك وطريقة الدخول وتاريخ أول وآخر استخدام وعدد أسئلتك (بدون محتواها)، لإدارة الخدمة ومنع إساءة الاستخدام. تُحذف عند حذف حسابك.</li>
 </ul>
 <h2>حساب الأسئلة المجانية</h2>
 <ul>
@@ -96,7 +97,8 @@ const privacy = page('سياسة الخصوصية — قارئ الملفات', 
 <li>These services process data under their own policies.</li>
 </ul>
 <h2>Account</h2>
-<ul><li>Sign-in uses Google Firebase with a Google account or email. We receive your account ID, email, and name and photo if any.</li></ul>
+<ul><li>Sign-in uses Google Firebase with a Google account or email. We receive your account ID, email, and name and photo if any.</li>
+<li>Our server keeps your account ID, email, sign-in method, first and last use, and how many questions you asked (not their content), to run the service and prevent abuse. They are deleted when you delete your account.</li></ul>
 <h2>Counting free questions</h2>
 <ul><li>Our server keeps only your account ID, a device ID and how many questions you asked each day (not their content). These records are deleted automatically after 3 days.</li></ul>
 <h2>Subscription</h2>
@@ -130,7 +132,7 @@ const del = page('حذف الحساب — قارئ الملفات', `
 <p>أرسل رسالة إلى <a href="mailto:${CONTACT}?subject=Delete%20my%20File%20Chat%20account">${CONTACT}</a> من نفس البريد المسجّل، بعنوان «حذف حسابي»، وسنحذفه خلال 7 أيام.</p>
 <h2>ما يُحذف</h2>
 <ul>
-<li>حسابك (البريد، الاسم، الصورة، معرّف الحساب).</li>
+<li>حسابك (البريد، الاسم، الصورة، معرّف الحساب) وسجله على خادمنا.</li>
 <li>سجل الاشتراك على خادمنا فورًا، وسجلات عدد الأسئلة ومعرّف الجهاز تلقائيًا خلال 3 أيام.</li>
 <li>الملفات والمحادثات محفوظة على هاتفك فقط، وتُحذف بحذف التطبيق أو من قائمة المحادثات.</li>
 </ul>
@@ -155,7 +157,7 @@ const del = page('حذف الحساب — قارئ الملفات', `
 <p>Email <a href="mailto:${CONTACT}?subject=Delete%20my%20File%20Chat%20account">${CONTACT}</a> from the address you signed up with, subject "Delete my account". We delete it within 7 days.</p>
 <h2>What is deleted</h2>
 <ul>
-<li>Your account (email, name, photo, account ID).</li>
+<li>Your account (email, name, photo, account ID) and its record on our server.</li>
 <li>The subscription record on our server right away; question counts and device ID automatically within 3 days.</li>
 <li>Files and chats live only on your phone; uninstalling the app or deleting chats removes them.</li>
 </ul>

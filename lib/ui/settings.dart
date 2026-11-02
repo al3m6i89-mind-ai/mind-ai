@@ -9,6 +9,7 @@ import '../core/updates.dart';
 import '../core/strings.dart';
 import '../core/support.dart';
 import 'account.dart';
+import 'admin.dart';
 import 'help.dart';
 import 'plans.dart';
 import 'theme.dart';
@@ -60,6 +61,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   trailing: const Icon(Icons.chevron_right_rounded),
                   onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountScreen())),
                 ),
+                if (Admin.isOwner(store.auth.user?.email))
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    leading: CircleAvatar(child: Icon(Icons.insights_rounded, color: primary)),
+                    title: Text(s.t('admin')),
+                    subtitle: Text(s.t('adminSub'), style: TextStyle(color: context.muted, fontSize: 12.5)),
+                    trailing: const Icon(Icons.chevron_right_rounded),
+                    onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AdminScreen())),
+                  ),
               ]),
             section(s.t('subscription'), [
               Container(

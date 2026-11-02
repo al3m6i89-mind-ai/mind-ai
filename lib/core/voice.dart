@@ -13,7 +13,7 @@ import 'ai.dart';
 class VoiceError implements Exception {
   const VoiceError(this.code);
 
-  /// mic (no permission), quota (daily limit), signIn, empty (nothing heard), failed.
+  /// mic (no permission), quota (daily limit), signIn, suspended (blocked by the owner), empty (nothing heard), failed.
   final String code;
   @override
   String toString() => 'VoiceError($code)';
@@ -111,6 +111,7 @@ class Voice extends ChangeNotifier {
     final why = res.headers['x-proxy-error'];
     if (res.statusCode == 429 && why == 'quota') throw const VoiceError('quota');
     if (res.statusCode == 401 && why == 'auth') throw const VoiceError('signIn');
+    if (why == 'blocked') throw const VoiceError('suspended');
     if (res.statusCode != 200) {
       debugPrint('voice ${res.statusCode}: ${res.body}');
       throw const VoiceError('failed');

@@ -297,7 +297,7 @@ class AiClient {
           final d = f.detail == null ? '' : ' — ${f.detail}';
           yield AiTrace('$a: ${f.code}$d');
           // Out of questions or signed out: no other server may answer instead.
-          if (const {'blocked', 'quota', 'signIn'}.contains(f.code)) throw AiException(f.code);
+          if (const {'blocked', 'quota', 'signIn', 'suspended'}.contains(f.code)) throw AiException(f.code);
           if (f.proxyDead) proxyDead = true;
           if (f.providerDead) deadProviders.add(a.provider);
           if (!f.retryable) dead.add('$a');
@@ -430,6 +430,7 @@ class AiClient {
       return _Fail('quota', detail: detail);
     }
     if (headers['x-proxy-error'] == 'auth') return _Fail('signIn', detail: detail);
+    if (headers['x-proxy-error'] == 'blocked') return _Fail('suspended', detail: detail);
     if (headers['x-proxy-error'] == 'question') return _Fail('busy', proxyDead: true, detail: detail);
     if (headers['x-proxy-error'] == 'path') return _Fail('busy', proxyDead: true, detail: detail);
     if (headers['x-proxy-error'] == 'unconfigured') return _Fail('busy', providerDead: true, detail: detail);

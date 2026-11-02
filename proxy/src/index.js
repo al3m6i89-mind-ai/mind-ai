@@ -171,7 +171,7 @@ export function quotaCheck(sql, { uid, device, qid, kind, limit, now = Date.now(
   if (n >= limit) return { ok: false, why: 'quota', left: 0 };
   sql.exec('INSERT INTO q (day, kind, uid, device, qid, first, hits) VALUES (?, ?, ?, ?, ?, ?, 1)', day, kind, uid, device || '', qid, now);
   if (Math.random() < 0.01) sql.exec('DELETE FROM q WHERE day < ?', today(now - 3 * 86400000));
-  return { ok: true, left: Math.max(0, limit - n - 1) };
+  return { ok: true, left: Math.max(0, limit - n - 1), fresh: true };
 }
 
 export function quotaStatus(sql, { uid, device, kind, limit, now = Date.now() }) {
@@ -203,17 +203,102 @@ export function saveSub(sql, { token, uid, expiry, now = Date.now() }) {
  * they expire (3 days), or deleting would hand out new free questions. */
 export function forget(sql, uid) {
   subsTable(sql);
+  statsTables(sql);
   sql.exec('DELETE FROM subs WHERE uid = ?', uid);
+  sql.exec('DELETE FROM users WHERE uid = ?', uid);
   return { ok: true };
+}
+
+// ---------- Users and daily totals, for the owner's dashboard ----------
+const statsTables = (sql) => {
+  sql.exec(`CREATE TABLE IF NOT EXISTS users (uid TEXT PRIMARY KEY, email TEXT, provider TEXT,
+            first INTEGER, last INTEGER, questions INTEGER DEFAULT 0, voice INTEGER DEFAULT 0)`);
+  // Accounts the owner blocked (kept apart from users, so deleting an account does not unblock it).
+  sql.exec('CREATE TABLE IF NOT EXISTS blocked (uid TEXT PRIMARY KEY, email TEXT, at INTEGER)');
+  sql.exec('CREATE TABLE IF NOT EXISTS stats (day TEXT, kind TEXT, n INTEGER, PRIMARY KEY (day, kind))');
+};
+
+/** Remembers who asked (account ID, email, sign-in method, first and last time) and counts the question. */
+export function noteUse(sql, { uid, email, provider, kind, fresh, now = Date.now() }) {
+  statsTables(sql);
+  sql.exec(`INSERT INTO users (uid, email, provider, first, last) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(uid) DO UPDATE SET email = excluded.email, provider = excluded.provider, last = excluded.last`,
+  uid, email || '', provider || '', now, now);
+  if (!fresh) return;
+  if (kind === 'ask') sql.exec('UPDATE users SET questions = questions + 1 WHERE uid = ?', uid);
+  if (kind === 'voice') sql.exec('UPDATE users SET voice = voice + 1 WHERE uid = ?', uid);
+  sql.exec(`INSERT INTO stats (day, kind, n) VALUES (?, ?, 1) ON CONFLICT(day, kind) DO UPDATE SET n = n + 1`, today(now), kind);
+}
+
+export function isBlocked(sql, uid) {
+  statsTables(sql);
+  return sql.exec('SELECT 1 AS b FROM blocked WHERE uid = ?', uid).toArray().length > 0;
+}
+
+/** Blocks or unblocks an account (by its ID, as shown on the dashboard). */
+export function setBlocked(sql, { uid, block, now = Date.now() }) {
+  statsTables(sql);
+  if (block) {
+    const email = sql.exec('SELECT email FROM users WHERE uid = ?', uid).toArray()[0]?.email || '';
+    sql.exec('INSERT OR REPLACE INTO blocked (uid, email, at) VALUES (?, ?, ?)', uid, email, now);
+  } else {
+    sql.exec('DELETE FROM blocked WHERE uid = ?', uid);
+  }
+  return { ok: true, blocked: Boolean(block) };
+}
+
+/** Everything the dashboard shows. */
+export function dashboard(sql, now = Date.now()) {
+  statsTables(sql);
+  subsTable(sql);
+  quotaCheck(sql, { uid: '', device: '', qid: '', kind: 'ask', limit: 0, now }); // makes sure table q exists
+  const one = (q, ...b) => sql.exec(q, ...b).one();
+  const day = today(now);
+  const dayStart = Date.parse(day + 'T00:00:00Z');
+  const days = [];
+  for (let i = 13; i >= 0; i--) {
+    const d = today(now - i * 86400000);
+    const row = { day: d, ask: 0, help: 0, voice: 0, users: 0 };
+    for (const r of sql.exec('SELECT kind, n FROM stats WHERE day = ?', d).toArray()) row[r.kind] = r.n;
+    const start = Date.parse(d + 'T00:00:00Z');
+    row.users = one('SELECT COUNT(*) AS n FROM users WHERE first >= ? AND first < ?', start, start + 86400000).n;
+    days.push(row);
+  }
+  const users = sql.exec(`SELECT u.uid, u.email, u.provider, u.first, u.last, u.questions, u.voice,
+      (SELECT COUNT(*) FROM q WHERE q.uid = u.uid AND q.day = ? AND q.kind = 'ask') AS today,
+      (SELECT MAX(expiry) FROM subs WHERE subs.uid = u.uid AND subs.expiry > ?) AS premiumUntil,
+      (SELECT COUNT(*) FROM blocked b WHERE b.uid = u.uid) AS blocked
+      FROM users u ORDER BY u.last DESC LIMIT 500`, day, now).toArray();
+  return {
+    now,
+    totals: {
+      users: one('SELECT COUNT(*) AS n FROM users').n,
+      newToday: one('SELECT COUNT(*) AS n FROM users WHERE first >= ?', dayStart).n,
+      activeToday: one('SELECT COUNT(*) AS n FROM users WHERE last >= ?', dayStart).n,
+      active7: one('SELECT COUNT(*) AS n FROM users WHERE last >= ?', now - 7 * 86400000).n,
+      subscribers: one('SELECT COUNT(DISTINCT uid) AS n FROM subs WHERE expiry > ?', now).n,
+      questionsToday: days.at(-1).ask,
+      voiceToday: days.at(-1).voice,
+      helpToday: days.at(-1).help,
+      questionsAll: one('SELECT COALESCE(SUM(questions), 0) AS n FROM users').n,
+      byGoogle: one("SELECT COUNT(*) AS n FROM users WHERE provider = 'google.com'").n,
+      byEmail: one("SELECT COUNT(*) AS n FROM users WHERE provider = 'password'").n,
+      blocked: one('SELECT COUNT(*) AS n FROM blocked').n,
+    },
+    days,
+    users,
+  };
 }
 
 /** Quota with the limit of the account's plan. */
 export function planned(sql, body, now = Date.now()) {
+  if (isBlocked(sql, body.uid)) return { ok: false, why: 'blocked', left: 0, limit: 0, plan: 'free', until: 0 };
   const until = premiumUntil(sql, body.uid, now);
   const plan = until > now ? 'premium' : 'free';
   const limit = LIMITS[body.kind][plan];
   const args = { ...body, limit, now };
   const r = body.op === 'status' ? quotaStatus(sql, args) : quotaCheck(sql, args);
+  if (body.op !== 'status' && r.ok) noteUse(sql, { ...body, fresh: r.fresh, now });
   return { ...r, limit, plan, until };
 }
 
@@ -225,6 +310,8 @@ export class Quota {
     const body = await request.json();
     if (body.op === 'save-sub') return Response.json(saveSub(this.sql, body));
     if (body.op === 'forget') return Response.json(forget(this.sql, body.uid));
+    if (body.op === 'dashboard') return Response.json(dashboard(this.sql));
+    if (body.op === 'block') return Response.json(setBlocked(this.sql, body));
     return Response.json(planned(this.sql, body));
   }
 }
@@ -254,13 +341,17 @@ async function admit(request, env, statusOnly = false) {
   const kind = kindOf(request);
   const device = (request.headers.get('x-device-id') || '').slice(0, 64);
   const qid = (request.headers.get('x-question-id') || '').slice(0, 64);
-  const r = await quota(env, { op: statusOnly ? 'status' : 'check', uid: claims.sub, device, qid, kind });
+  const r = await quota(env, {
+    op: statusOnly ? 'status' : 'check', uid: claims.sub, device, qid, kind,
+    email: claims.email || claims.phone_number || '', provider: claims.firebase?.sign_in_provider || '',
+  });
   const headers = {
     'x-quota-left': String(r.left),
     'x-quota-limit': String(r.limit),
     'x-plan': r.plan,
     'x-premium-until': String(r.until || 0),
   };
+  if (r.why === 'blocked') return { refuse: refuse(403, 'blocked') };
   if (!statusOnly && !r.ok) return { refuse: refuse(429, r.why, headers) };
   return { headers };
 }
@@ -330,6 +421,32 @@ async function checkPurchase(request, env) {
   return Response.json({ premium: true, until: r.until });
 }
 
+/** True for the owner's accounts (ADMIN_EMAILS in wrangler.toml), signed in with a confirmed address. */
+export function isAdmin(claims, env) {
+  const admins = String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((e) => e.trim()).filter(Boolean);
+  return Boolean(claims && claims.email_verified === true && admins.includes(String(claims.email || '').toLowerCase()));
+}
+
+async function adminStats(request, env) {
+  if (!env.FIREBASE_PROJECT) return refuse(501, 'unconfigured');
+  const claims = await signedIn(request, env);
+  if (!claims) return refuse(401, 'auth');
+  if (!isAdmin(claims, env)) return refuse(403, 'admin');
+  if (request.method === 'POST') {
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return refuse(400, 'body');
+    }
+    const uid = String(body.uid || '');
+    if (!uid || uid.length > 128) return refuse(400, 'body');
+    if (uid === claims.sub) return refuse(400, 'self');
+    return Response.json(await quota(env, { op: 'block', uid, block: body.block === true }));
+  }
+  return Response.json(await quota(env, { op: 'dashboard' }), { headers: { 'cache-control': 'no-store' } });
+}
+
 async function forgetAccount(request, env) {
   if (!env.FIREBASE_PROJECT) return Response.json({ ok: true });
   const claims = await signedIn(request, env);
@@ -362,6 +479,7 @@ export default {
     }
     if (url.pathname === '/purchase' && request.method === 'POST') return checkPurchase(request, env);
     if (url.pathname === '/account' && request.method === 'DELETE') return forgetAccount(request, env);
+    if (url.pathname === '/admin' && ['GET', 'POST'].includes(request.method)) return adminStats(request, env);
 
     if (url.pathname === '/config') {
       const chain = CHAIN.filter((c) => PROVIDERS[c.p].optional || keysOf(env, PROVIDERS[c.p].keys).length);

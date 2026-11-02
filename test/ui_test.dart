@@ -10,6 +10,7 @@ import 'package:file_chat/core/store.dart';
 import 'package:file_chat/core/updates.dart';
 import 'package:file_chat/main.dart';
 import 'package:file_chat/ui/account.dart';
+import 'package:file_chat/ui/admin.dart';
 import 'package:file_chat/ui/help.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -90,6 +91,60 @@ void main() {
     expect(find.text('0 / ${Plan.freeDailyQuestions}'), findsOneWidget);
     expect(find.text('50 ميجابايت'), findsOneWidget);
     expect(find.text('يجب إيقافه'), findsOneWidget);
+  });
+
+  testWidgets('owner dashboard: numbers, users, and blocking an account', (t) async {
+    final now = DateTime.utc(2026, 11, 2, 12).millisecondsSinceEpoch;
+    var blocked = 0;
+    final calls = <String>[];
+    t.view.physicalSize = const Size(900, 3200);
+    t.view.devicePixelRatio = 1;
+    addTearDown(t.view.reset);
+    Map<String, dynamic> data() => {
+          'now': now,
+          'totals': {'users': 2, 'newToday': 1, 'activeToday': 2, 'active7': 2, 'subscribers': 1, 'questionsToday': 7,
+            'voiceToday': 2, 'helpToday': 0, 'questionsAll': 123, 'byGoogle': 1, 'byEmail': 1, 'blocked': blocked},
+          'days': [for (var i = 0; i < 14; i++) {'day': '2026-10-${(20 + i).toString().padLeft(2, '0')}', 'ask': i, 'voice': 0, 'help': 0, 'users': 0}],
+          'users': [
+            {'uid': 'u1', 'email': 'spam@gmail.com', 'provider': 'password', 'first': now - 3600000, 'last': now - 120000,
+              'questions': 30, 'voice': 2, 'today': 7, 'premiumUntil': null, 'blocked': blocked},
+            {'uid': 'u2', 'email': 'good@hotmail.com', 'provider': 'google.com', 'first': now - 86400000 * 3, 'last': now - 86400000,
+              'questions': 1, 'voice': 0, 'today': 0, 'premiumUntil': now + 86400000 * 20, 'blocked': 0},
+          ],
+        };
+    await t.pumpWidget(ChangeNotifierProvider.value(
+        value: store,
+        child: MaterialApp(
+            home: AdminScreen(
+          load: () async => data(),
+          block: (uid, b) async {
+            calls.add('$uid:$b');
+            blocked = b ? 1 : 0;
+            return true;
+          },
+        ))));
+    await t.pumpAndSettle();
+    expect(find.text('123'), findsOneWidget);
+    expect(find.text('spam@gmail.com'), findsOneWidget);
+    expect(find.text('good@hotmail.com'), findsOneWidget);
+    await t.enterText(find.byType(TextField), 'spam');
+    await t.pumpAndSettle();
+    expect(find.text('good@hotmail.com'), findsNothing);
+    await t.tap(find.text('spam@gmail.com'));
+    await t.pumpAndSettle();
+    await t.tap(find.widgetWithText(FilledButton, 'حظر'));
+    await t.pumpAndSettle();
+    expect(find.text('حظر spam@gmail.com؟'), findsOneWidget);
+    await t.tap(find.widgetWithText(FilledButton, 'حظر'));
+    await t.pumpAndSettle();
+    expect(calls, ['u1:true']);
+    expect(find.text('محظور'), findsOneWidget);
+  });
+
+  test('only the owner sees the dashboard button', () {
+    expect(Admin.isOwner('Zuhair63766@gmail.com'), isTrue);
+    expect(Admin.isOwner('someone@gmail.com'), isFalse);
+    expect(Admin.isOwner(null), isFalse);
   });
 
   testWidgets('a new release shows a banner, settings can check again', (t) async {

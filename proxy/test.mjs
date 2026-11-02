@@ -110,11 +110,11 @@ const sqlOf = (db) => ({
 });
 const sql = sqlOf(new DatabaseSync(':memory:'));
 const ask = (o) => quotaCheck(sql, { kind: 'ask', limit: 3, uid: 'u1', device: 'd1', ...o });
-assert.deepEqual(ask({ qid: 'a' }), { ok: true, left: 2 });
+assert.deepEqual(ask({ qid: 'a' }), { ok: true, left: 2, fresh: true });
 assert.equal(ask({ qid: 'a' }).ok, true, 'same question, more requests');
 assert.equal(ask({ qid: 'a' }).left, 2, 'not counted twice');
 ask({ qid: 'b' });
-assert.deepEqual(ask({ qid: 'c' }), { ok: true, left: 0 });
+assert.deepEqual(ask({ qid: 'c' }), { ok: true, left: 0, fresh: true });
 assert.deepEqual(ask({ qid: 'd' }), { ok: false, why: 'quota', left: 0 });
 assert.equal(ask({ qid: 'e', uid: 'u2' }).ok, false, 'a new account on the same phone gets nothing');
 assert.equal(ask({ qid: 'f', device: 'd2' }).ok, false, 'the same account on a new phone gets nothing');
@@ -233,6 +233,44 @@ j = await r.json();
 assert.deepEqual([j.plan, j.left, j.verify], ['free', 0, true], 'deleting does not hand out new free questions');
 r = await worker.fetch(req('/account', 't', 'DELETE', {}), authEnv);
 assert.equal(r.status, 401);
+
+// The owner's dashboard.
+const adminEnv = { ...authEnv, ADMIN_EMAILS: 'boss@gmail.com, other@hotmail.com' };
+const bossTok = await token({ sub: 'boss', email: 'Boss@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+r = await worker.fetch(req('/admin', 't', 'GET', good), adminEnv);
+assert.equal(r.status, 403, 'other accounts cannot open it');
+r = await worker.fetch(req('/admin', 't', 'GET', {}), adminEnv);
+assert.equal(r.status, 401);
+r = await worker.fetch(req('/admin', 't', 'GET', { 'x-user-token': await token({ sub: 'fake', email: 'boss@gmail.com', email_verified: false }) }), adminEnv);
+assert.equal(r.status, 403, 'an unconfirmed address is not enough');
+const userTok = await token({ sub: 'u-mail', email: 'sara@hotmail.com', email_verified: true, firebase: { sign_in_provider: 'password' } });
+r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-user-token': userTok, 'x-device-id': 'dd', 'x-question-id': 's1' }), adminEnv);
+assert.equal(r.status, 200);
+await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-user-token': userTok, 'x-device-id': 'dd', 'x-question-id': 's1' }), adminEnv);
+r = await worker.fetch(req('/admin', 't', 'GET', { 'x-user-token': bossTok }), adminEnv);
+assert.equal(r.status, 200);
+j = await r.json();
+const sara = j.users.find((u) => u.uid === 'u-mail');
+assert.deepEqual([sara.email, sara.provider, sara.questions, sara.today], ['sara@hotmail.com', 'password', 1, 1], 'one question even with two requests');
+assert.ok(j.totals.users >= 1 && j.totals.questionsToday >= 1 && j.days.length === 14);
+assert.equal(j.totals.byEmail, 1);
+
+// Blocking from the dashboard.
+const adminPost = (body, tok = bossTok) => worker.fetch(new Request('https://proxy.example/admin', {
+  method: 'POST', headers: { 'x-app-token': 't', 'x-user-token': tok }, body: JSON.stringify(body) }), adminEnv);
+assert.equal((await adminPost({ uid: 'u-mail', block: true }, userTok)).status, 403, 'only the owner can block');
+assert.equal((await adminPost({ uid: 'boss', block: true })).status, 400, 'the owner cannot lock himself out');
+assert.equal((await adminPost({ uid: 'u-mail', block: true })).status, 200);
+r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-user-token': userTok, 'x-device-id': 'dd', 'x-question-id': 's2' }), adminEnv);
+assert.deepEqual([r.status, r.headers.get('x-proxy-error')], [403, 'blocked']);
+r = await worker.fetch(req('/quota', 't', 'GET', { 'x-user-token': userTok }), adminEnv);
+assert.equal(r.status, 403, 'a blocked account gets nothing');
+j = await (await worker.fetch(req('/admin', 't', 'GET', { 'x-user-token': bossTok }), adminEnv)).json();
+assert.equal(j.users.find((u) => u.uid === 'u-mail').blocked, 1);
+assert.equal(j.totals.blocked, 1);
+assert.equal((await adminPost({ uid: 'u-mail', block: false })).status, 200);
+r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-user-token': userTok, 'x-device-id': 'dd', 'x-question-id': 's3' }), adminEnv);
+assert.equal(r.status, 200, 'unblocked');
 r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-ci': 'k1, k2' }), authEnv);
 assert.equal(r.status, 200, 'the deploy check passes with the server keys');
 console.log('proxy ok');

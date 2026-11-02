@@ -5,6 +5,8 @@ workers_dev = true
 
 [vars]
 FIREBASE_PROJECT = "file-chat-224b4"
+# Accounts that can open the owner's dashboard (/admin).
+ADMIN_EMAILS = "zuhair63766@gmail.com,al3m6i89@gmail.com"
 
 # Daily question counts per user and device (SQLite storage, available on the free plan).
 [[durable_objects.bindings]]
