@@ -1,7 +1,7 @@
 {
-  "version": "1.5.1",
-  "build": 26,
+  "version": "1.5.2",
+  "build": 29,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• البحث عن تحديثات والتحديث من داخل التطبيق\n• إشعار عند صدور تحديث جديد\n• صفحة المساعدة: المساعد الذكي وخدمة العملاء والأسئلة الشائعة\n• إصلاح توقف التطبيق عند الفتح",
-  "notes_en": "• Check for updates and update from inside the app\n• A notification when a new version is out\n• Help page: smart assistant, customer service and FAQ\n• Fixed the app closing at launch"
+  "notes_ar": "• الحساب والاشتراك والمساعدة صارت داخل الإعدادات\n• التحديثات في آخر الإعدادات\n• الدخول بحساب Google",
+  "notes_en": "• Account, subscription and help are now in Settings\n• Updates moved to the bottom of Settings\n• Sign in with Google"
 }
