@@ -1,6 +1,6 @@
 {
-  "version": "1.8.0",
-  "build": 34,
+  "version": "1.8.1",
+  "build": 36,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
   "notes_ar": "• اسأل بصوتك: اضغط الميكروفون وتكلّم\n• زر مشاركة تحت كل إجابة\n• بحث أذكى في المحادثات\n• رسائل البريد بالعربي\n• صفحة سياسة الخصوصية\n• تحسينات أمان وحماية للخصوصية",
   "notes_en": "• Ask by voice: tap the mic and speak\n• Share button under every answer\n• Smarter chat search\n• Emails in your language\n• Privacy policy page\n• Security and privacy improvements"
