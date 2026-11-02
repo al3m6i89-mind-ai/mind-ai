@@ -13,7 +13,7 @@ import 'theme.dart';
 /// The owner's accounts. Only used to show the button; the proxy decides who
 /// may read the dashboard (ADMIN_EMAILS in proxy/wrangler.toml).
 class Admin {
-  static const emails = {'zuhair63766@gmail.com', 'al3m6i89@gmail.com'};
+  static const emails = {'5azuy2@gmail.com', 'al3m6i89@gmail.com'};
   static bool isOwner(String? email) => email != null && emails.contains(email.toLowerCase());
 }
 

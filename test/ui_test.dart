@@ -142,7 +142,8 @@ void main() {
   });
 
   test('only the owner sees the dashboard button', () {
-    expect(Admin.isOwner('Zuhair63766@gmail.com'), isTrue);
+    expect(Admin.isOwner('5AZUY2@gmail.com'), isTrue);
+    expect(Admin.isOwner('zuhair63766@gmail.com'), isFalse);
     expect(Admin.isOwner('someone@gmail.com'), isFalse);
     expect(Admin.isOwner(null), isFalse);
   });
