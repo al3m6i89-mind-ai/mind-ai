@@ -1,4 +1,7 @@
 import { PAGES } from './pages.js';
+// Constants live in their own module: everything the main module exports must be a
+// handler or a function for the Workers runtime.
+import { PACKAGE, PRODUCT } from './play.js';
 
 // File Chat proxy: keeps the AI services' keys on the server and forwards the
 // app's requests, adding a key. Bodies are streamed through, not parsed, so
@@ -58,13 +61,12 @@ const keysOf = (env, name) =>
 const refuse = (status, why, extra = {}) =>
   new Response(why, { status, headers: { 'x-proxy-error': why, ...extra } });
 
-export const LIMITS = {
+const LIMITS = {
   ask: { free: 20, premium: 300 }, // premium only for a subscription checked with Google Play (see /purchase)
   help: { free: 40, premium: 40 },
   voice: { free: 30, premium: 300 }, // spoken questions turned into text
 };
-export const PACKAGE = 'com.zuhair.file_chat';
-export const PRODUCT = 'file_chat_premium_monthly';
+
 const QUESTION_WINDOW_MS = 30 * 60 * 1000; // one question id stays usable this long
 const QUESTION_MAX_REQUESTS = 150; // and for this many requests (uploads poll while files process)
 

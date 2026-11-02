@@ -1,5 +1,6 @@
 // node proxy/test.mjs — checks routing, auth and key injection with a stubbed fetch.
-import worker, { emailAllowed, verifyIdToken, quotaCheck, _resetJwksForTest, Quota, subscriptionUntil, saveSub, premiumUntil, PRODUCT } from './src/index.js';
+import worker, { emailAllowed, verifyIdToken, quotaCheck, _resetJwksForTest, Quota, subscriptionUntil, saveSub, premiumUntil } from './src/index.js';
+import { PRODUCT } from './src/play.js';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 

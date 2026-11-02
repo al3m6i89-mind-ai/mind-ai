@@ -26,7 +26,9 @@ Future<Map<String, dynamic>> loadDashboard(AppStore store, {http.Client? client,
       .get(Uri.parse('${proxy.base}/admin'), headers: {'x-app-token': proxy.token, ...session})
       .timeout(const Duration(seconds: 20));
   if (res.statusCode == 403) throw const _AdminError('adminDenied');
-  if (res.statusCode != 200) throw const _AdminError('adminFailed');
+  if (res.statusCode != 200) {
+    throw _AdminError('adminFailed', 'HTTP ${res.statusCode} ${res.headers['x-proxy-error'] ?? ''}'.trim());
+  }
   return jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
 }
 
@@ -44,8 +46,11 @@ Future<bool> setUserBlocked(AppStore store, String uid, bool block, {http.Client
 }
 
 class _AdminError implements Exception {
-  const _AdminError(this.key);
+  const _AdminError(this.key, [this.detail]);
   final String key;
+
+  /// Shown under the message, so a screenshot tells what went wrong.
+  final String? detail;
 }
 
 class AdminScreen extends StatefulWidget {
@@ -62,6 +67,7 @@ class AdminScreen extends StatefulWidget {
 class _AdminScreenState extends State<AdminScreen> {
   Map<String, dynamic>? _data;
   String? _error;
+  String? _detail;
   bool _loading = true;
   String _q = '';
   bool _onlyBlocked = false;
@@ -181,15 +187,26 @@ class _AdminScreenState extends State<AdminScreen> {
     setState(() {
       _loading = true;
       _error = null;
+      _detail = null;
     });
     try {
       final store = context.read<AppStore>();
       final d = await (widget.load?.call() ?? loadDashboard(store));
       if (mounted) setState(() => _data = d);
     } on _AdminError catch (e) {
-      if (mounted) setState(() => _error = e.key);
-    } catch (_) {
-      if (mounted) setState(() => _error = 'adminFailed');
+      if (mounted) {
+        setState(() {
+          _error = e.key;
+          _detail = e.detail;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _error = 'adminFailed';
+          _detail = e.runtimeType.toString();
+        });
+      }
     } finally {
       if (mounted) setState(() => _loading = false);
     }
@@ -217,7 +234,9 @@ class _AdminScreenState extends State<AdminScreen> {
                         ? const CircularProgressIndicator()
                         : Padding(
                             padding: const EdgeInsets.all(24),
-                            child: Text(s.t(_error ?? 'adminFailed'), textAlign: TextAlign.center),
+                            child: Text(
+                                '${s.t(_error ?? 'adminFailed')}${_detail == null ? '' : '\n\n$_detail'}',
+                                textAlign: TextAlign.center),
                           ),
                   ),
                 ])
