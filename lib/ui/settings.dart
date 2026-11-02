@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
+import 'account.dart';
 import 'plans.dart';
 import 'theme.dart';
 
@@ -49,26 +50,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   contentPadding: EdgeInsets.zero,
                   leading: const CircleAvatar(child: Icon(Icons.person_rounded)),
                   title: Text(store.auth.label ?? ''),
-                  trailing: TextButton(
-                    onPressed: () async {
-                      final ok = await showDialog<bool>(
-                        context: context,
-                        builder: (ctx) => AlertDialog(
-                          title: Text(s.t('signOutQ')),
-                          content: Text(s.t('signOutText')),
-                          actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.t('cancel'))),
-                            FilledButton(onPressed: () => Navigator.pop(ctx, true), child: Text(s.t('signOut'))),
-                          ],
-                        ),
-                      );
-                      if (ok == true) {
-                        await store.auth.signOut();
-                        if (context.mounted) Navigator.popUntil(context, (r) => r.isFirst);
-                      }
-                    },
-                    child: Text(s.t('signOut')),
-                  ),
+                  subtitle: Text(s.t('accountDetails'), style: TextStyle(color: context.muted, fontSize: 12.5)),
+                  trailing: const Icon(Icons.chevron_right_rounded),
+                  onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountScreen())),
                 ),
               ]),
             section(s.t('subscription'), [

@@ -3,9 +3,12 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:file_chat/core/auth.dart';
+import 'package:file_chat/core/models.dart';
 import 'package:file_chat/core/plan.dart';
 import 'package:file_chat/core/store.dart';
 import 'package:file_chat/main.dart';
+import 'package:file_chat/ui/account.dart';
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -37,6 +40,45 @@ void main() {
     await t.tap(find.text('English'));
     await t.pumpAndSettle();
     expect(find.text('Language'), findsOneWidget);
+  });
+
+  testWidgets('long press selects chats, select all, delete selected', (t) async {
+    for (final n in ['أولى', 'ثانية', 'ثالثة']) {
+      store.conversations.add(Conversation(id: n, title: n));
+    }
+    await pump(t);
+    await t.tap(find.byTooltip('المحادثات'));
+    await t.pumpAndSettle();
+    await t.longPress(find.text('ثانية'));
+    await t.pumpAndSettle();
+    expect(find.text('1 محدد'), findsOneWidget);
+    await t.tap(find.text('تحديد الكل'));
+    await t.pumpAndSettle();
+    expect(find.text('3 محدد'), findsOneWidget);
+    await t.tap(find.text('أولى'));
+    await t.pumpAndSettle();
+    expect(find.text('2 محدد'), findsOneWidget);
+    await t.tap(find.byTooltip('حذف'));
+    await t.pumpAndSettle();
+    await t.runAsync(() async {
+      await t.tap(find.widgetWithText(FilledButton, 'حذف'));
+      for (var i = 0; i < 20 && store.conversations.length > 1; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+      }
+    });
+    await t.pumpAndSettle();
+    expect(store.conversations.map((c) => c.title), ['أولى']);
+    expect(find.text('تحديد الكل'), findsNothing);
+  });
+
+  testWidgets('account screen shows the plan and today\'s usage', (t) async {
+    await t.pumpWidget(ChangeNotifierProvider.value(
+        value: store, child: const MaterialApp(home: Directionality(textDirection: TextDirection.rtl, child: AccountScreen()))));
+    await t.pumpAndSettle();
+    expect(find.text('باقتك'), findsOneWidget);
+    expect(find.text('0 / ${Plan.freeDailyQuestions}'), findsOneWidget);
+    expect(find.text('50 ميجابايت'), findsOneWidget);
+    expect(find.text('يجب إيقافه'), findsOneWidget);
   });
 
   testWidgets('an ad blocker on the free plan covers the app until it is off', (t) async {

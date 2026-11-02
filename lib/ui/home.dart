@@ -9,6 +9,7 @@ import '../core/models.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
+import 'account.dart';
 import 'attachment_card.dart';
 import 'message_view.dart';
 import 'plans.dart';
@@ -622,6 +623,34 @@ class _ChatsDrawer extends StatefulWidget {
 
 class _ChatsDrawerState extends State<_ChatsDrawer> {
   String _q = '';
+  final Set<String> _sel = {};
+
+  bool get _selecting => _sel.isNotEmpty;
+
+  void _toggle(String id) => setState(() => _sel.contains(id) ? _sel.remove(id) : _sel.add(id));
+
+  Future<void> _deleteSelected(AppStore store, S s) async {
+    final chosen = store.conversations.where((c) => _sel.contains(c.id)).toList();
+    if (chosen.isEmpty) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(s.t('deleteChatsQ')),
+        content: Text(s.t('deleteChatsText', {'n': '${chosen.length}'})),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.t('cancel'))),
+          FilledButton(
+            style: FilledButton.styleFrom(backgroundColor: context.danger),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text(s.t('delete')),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    setState(_sel.clear);
+    await store.deleteConversations(chosen);
+  }
 
   String _group(DateTime d, S s) {
     final now = DateTime.now();
@@ -653,12 +682,20 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
         ));
       }
       final active = c.id == store.currentId;
+      final picked = _sel.contains(c.id);
       final files = c.attachments.length;
       rows.add(Padding(
         padding: const EdgeInsets.only(bottom: 2),
         child: ListTile(
           dense: true,
-          selected: active,
+          selected: _selecting ? picked : active,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          leading: _selecting
+              ? Icon(picked ? Icons.check_circle_rounded : Icons.radio_button_unchecked_rounded,
+                  color: picked ? scheme.primary : context.muted, size: 22)
+              : null,
+          minLeadingWidth: 0,
+          onLongPress: () => _toggle(c.id),
           selectedTileColor: scheme.primary.withValues(alpha: 0.10),
           selectedColor: scheme.onSurface,
           contentPadding: const EdgeInsetsDirectional.only(start: 12, end: 0),
@@ -668,10 +705,11 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
               ? null
               : Text(s.filesCount(files), style: TextStyle(fontSize: 11.5, color: context.muted)),
           onTap: () {
+            if (_selecting) return _toggle(c.id);
             store.select(c.id);
             Navigator.pop(context);
           },
-          trailing: PopupMenuButton<String>(
+          trailing: _selecting ? null : PopupMenuButton<String>(
             icon: Icon(Icons.more_horiz_rounded, color: context.muted, size: 20),
             onSelected: (v) {
               if (v == 'rename') widget.home.renameConv(c);
@@ -730,6 +768,47 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
                   isDense: true,
                 ),
               ),
+              if (_selecting)
+                Container(
+                  margin: const EdgeInsets.only(top: 10),
+                  padding: const EdgeInsetsDirectional.fromSTEB(4, 2, 4, 2),
+                  decoration: BoxDecoration(
+                    color: scheme.primary.withValues(alpha: 0.10),
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  child: Row(children: [
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: s.t('cancel'),
+                      icon: const Icon(Icons.close_rounded),
+                      onPressed: () => setState(_sel.clear),
+                    ),
+                    Expanded(
+                      child: Text(s.t('selectedN', {'n': '${_sel.length}'}),
+                          maxLines: 1, overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(fontWeight: FontWeight.w700)),
+                    ),
+                    TextButton(
+                      style: TextButton.styleFrom(
+                          visualDensity: VisualDensity.compact, padding: const EdgeInsets.symmetric(horizontal: 8)),
+                      onPressed: () => setState(() {
+                        final all = list.every((c) => _sel.contains(c.id));
+                        if (all) {
+                          _sel.removeAll(list.map((c) => c.id));
+                        } else {
+                          _sel.addAll(list.map((c) => c.id));
+                        }
+                      }),
+                      child: Text(list.every((c) => _sel.contains(c.id)) ? s.t('deselectAll') : s.t('selectAll')),
+                    ),
+                    IconButton(
+                      visualDensity: VisualDensity.compact,
+                      tooltip: s.t('delete'),
+                      icon: Icon(Icons.delete_outline_rounded, color: context.danger),
+                      onPressed: () => _deleteSelected(store, s),
+                    ),
+                  ]),
+                ),
               Expanded(
                 child: list.isEmpty
                     ? Center(
@@ -755,6 +834,17 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
                   openPlans(context);
                 },
               ),
+              if (store.auth.available && store.auth.user != null)
+                ListTile(
+                  leading: const Icon(Icons.account_circle_outlined),
+                  title: Text(store.auth.label ?? s.t('account'),
+                      maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
+                  subtitle: Text(s.t('accountDetails'), style: TextStyle(fontSize: 11.5, color: context.muted)),
+                  onTap: () {
+                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountScreen()));
+                  },
+                ),
               ListTile(
                 leading: const Icon(Icons.tune_rounded),
                 title: Text(s.t('settings'), style: const TextStyle(fontWeight: FontWeight.w500)),

@@ -167,6 +167,20 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Removes the chats from the list at once, then deletes their files.
+  Future<void> deleteConversations(Iterable<Conversation> list) async {
+    final chosen = list.toList();
+    if (chosen.any((c) => c.id == currentId)) select(null);
+    conversations.removeWhere(chosen.contains);
+    notifyListeners();
+    for (final c in chosen) {
+      final f = File('${_chatsDir.path}/${c.id}.json');
+      if (await f.exists()) await f.delete();
+      final dir = _filesDir(c.id);
+      if (await dir.exists()) await dir.delete(recursive: true);
+    }
+  }
+
   Future<void> deleteConversation(Conversation c) async {
     if (c.id == currentId) select(null);
     conversations.remove(c);
