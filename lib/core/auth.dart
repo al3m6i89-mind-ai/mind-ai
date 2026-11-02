@@ -110,7 +110,8 @@ class Auth extends ChangeNotifier {
             if (!done.isCompleted) done.complete(err);
           },
           verificationFailed: (e) {
-            if (!done.isCompleted) done.complete(e.code);
+            debugPrint('auth: ${e.code} ${e.message}');
+            if (!done.isCompleted) done.complete(_codeOf(e));
           },
           codeSent: (id, token) {
             _verificationId = id;
@@ -135,13 +136,23 @@ class Auth extends ChangeNotifier {
     if (available) await FirebaseAuth.instance.signOut();
   }
 
+  /// Firebase reports some failures (billing, app checks) only as "unknown" or
+  /// "internal-error"; the server's text is kept so the cause can be seen.
+  static String _codeOf(FirebaseAuthException e) {
+    if ((e.code == 'unknown' || e.code == 'internal-error') && (e.message ?? '').isNotEmpty) {
+      final m = e.message!;
+      return '${e.code}: ${m.length > 160 ? m.substring(0, 160) : m}';
+    }
+    return e.code;
+  }
+
   static Future<String?> _guard(Future<Object?> Function() f) async {
     try {
       await f();
       return null;
     } on FirebaseAuthException catch (e) {
       debugPrint('auth: ${e.code} ${e.message}');
-      return e.code;
+      return _codeOf(e);
     } catch (e) {
       debugPrint('auth: $e');
       return 'unknown:${e.runtimeType}';
