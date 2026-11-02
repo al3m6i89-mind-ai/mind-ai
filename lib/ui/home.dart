@@ -11,9 +11,7 @@ import '../core/models.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
-import 'account.dart';
 import 'attachment_card.dart';
-import 'help.dart';
 import 'message_view.dart';
 import 'plans.dart';
 import 'settings.dart';
@@ -837,37 +835,6 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
               ),
               const Divider(),
               const SizedBox(height: 4),
-              ListTile(
-                leading: const Icon(Icons.workspace_premium_rounded, color: Color(0xFFE0A100)),
-                title: Text(store.premium ? s.t('planPremium') : s.t('subscribe'),
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-                subtitle: store.premium
-                    ? null
-                    : Text(s.t('freeLeft', {'n': '${store.questionsLeft}'}), style: TextStyle(fontSize: 11.5, color: context.muted)),
-                onTap: () {
-                  Navigator.pop(context);
-                  openPlans(context);
-                },
-              ),
-              if (store.auth.available && store.auth.user != null)
-                ListTile(
-                  leading: const Icon(Icons.account_circle_outlined),
-                  title: Text(store.auth.label ?? s.t('account'),
-                      maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w500)),
-                  subtitle: Text(s.t('accountDetails'), style: TextStyle(fontSize: 11.5, color: context.muted)),
-                  onTap: () {
-                    Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountScreen()));
-                  },
-                ),
-              ListTile(
-                leading: const Icon(Icons.help_outline_rounded),
-                title: Text(s.t('help'), style: const TextStyle(fontWeight: FontWeight.w500)),
-                onTap: () {
-                  Navigator.pop(context);
-                  Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen()));
-                },
-              ),
               ListTile(
                 leading: const Icon(Icons.tune_rounded),
                 title: Text(s.t('settings'), style: const TextStyle(fontWeight: FontWeight.w500)),

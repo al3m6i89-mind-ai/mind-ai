@@ -153,6 +153,10 @@ class _AdBlockScreen extends StatelessWidget {
 
 /// Google or phone number sign-in.
 class LoginScreen extends StatefulWidget {
+  /// Phone sign-in needs Firebase's paid (Blaze) plan; build with
+  /// --dart-define=PHONE_LOGIN=true once billing is on.
+  static const phoneLogin = bool.fromEnvironment('PHONE_LOGIN');
+
   const LoginScreen({super.key});
 
   @override
@@ -255,70 +259,72 @@ class _LoginScreenState extends State<LoginScreen> {
                 ]),
               ),
             ),
-            const SizedBox(height: 22),
-            Row(children: [
-              const Expanded(child: Divider()),
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 12),
-                child: Text(s.t('or'), style: TextStyle(color: context.muted)),
-              ),
-              const Expanded(child: Divider()),
-            ]),
-            const SizedBox(height: 22),
-            if (!_codeSent) ...[
-              TextField(
-                controller: _phone,
-                keyboardType: TextInputType.phone,
-                textDirection: TextDirection.ltr,
-                autofillHints: const [AutofillHints.telephoneNumber],
-                decoration: InputDecoration(
-                  labelText: s.t('phone'),
-                  hintText: s.t('phoneHint'),
-                  helperText: s.t('phoneHelp'),
-                  prefixIcon: const Icon(Icons.phone_iphone_rounded),
+            if (LoginScreen.phoneLogin) ...[
+              const SizedBox(height: 22),
+              Row(children: [
+                const Expanded(child: Divider()),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 12),
+                  child: Text(s.t('or'), style: TextStyle(color: context.muted)),
                 ),
-                onSubmitted: (_) => _send(),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 50,
-                child: FilledButton(
-                  onPressed: _busy ? null : _send,
-                  child: _busy
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text(s.t('sendCode')),
-                ),
-              ),
-            ] else ...[
-              Text(s.t('codeSent', {'phone': _phone.text}), textAlign: TextAlign.center, style: TextStyle(color: context.muted)),
-              const SizedBox(height: 12),
-              TextField(
-                controller: _code,
-                keyboardType: TextInputType.number,
-                textAlign: TextAlign.center,
-                maxLength: 6,
-                autofillHints: const [AutofillHints.oneTimeCode],
-                style: const TextStyle(fontSize: 22, letterSpacing: 8, fontWeight: FontWeight.w600),
-                decoration: InputDecoration(labelText: s.t('code'), counterText: ''),
-                onSubmitted: (_) => _do(() => _auth.verifyCode(_code.text)),
-              ),
-              const SizedBox(height: 16),
-              SizedBox(
-                height: 50,
-                child: FilledButton(
-                  onPressed: _busy ? null : () => _do(() => _auth.verifyCode(_code.text)),
-                  child: _busy
-                      ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                      : Text(s.t('verify')),
-                ),
-              ),
-              Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-                TextButton(
-                  onPressed: _busy ? null : () => setState(() => _codeSent = false),
-                  child: Text(s.t('changeNumber')),
-                ),
-                TextButton(onPressed: _busy ? null : _send, child: Text(s.t('resend'))),
+                const Expanded(child: Divider()),
               ]),
+              const SizedBox(height: 22),
+              if (!_codeSent) ...[
+                TextField(
+                  controller: _phone,
+                  keyboardType: TextInputType.phone,
+                  textDirection: TextDirection.ltr,
+                  autofillHints: const [AutofillHints.telephoneNumber],
+                  decoration: InputDecoration(
+                    labelText: s.t('phone'),
+                    hintText: s.t('phoneHint'),
+                    helperText: s.t('phoneHelp'),
+                    prefixIcon: const Icon(Icons.phone_iphone_rounded),
+                  ),
+                  onSubmitted: (_) => _send(),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: _busy ? null : _send,
+                    child: _busy
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(s.t('sendCode')),
+                  ),
+                ),
+              ] else ...[
+                Text(s.t('codeSent', {'phone': _phone.text}), textAlign: TextAlign.center, style: TextStyle(color: context.muted)),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  textAlign: TextAlign.center,
+                  maxLength: 6,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  style: const TextStyle(fontSize: 22, letterSpacing: 8, fontWeight: FontWeight.w600),
+                  decoration: InputDecoration(labelText: s.t('code'), counterText: ''),
+                  onSubmitted: (_) => _do(() => _auth.verifyCode(_code.text)),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  height: 50,
+                  child: FilledButton(
+                    onPressed: _busy ? null : () => _do(() => _auth.verifyCode(_code.text)),
+                    child: _busy
+                        ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                        : Text(s.t('verify')),
+                  ),
+                ),
+                Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+                  TextButton(
+                    onPressed: _busy ? null : () => setState(() => _codeSent = false),
+                    child: Text(s.t('changeNumber')),
+                  ),
+                  TextButton(onPressed: _busy ? null : _send, child: Text(s.t('resend'))),
+                ]),
+              ],
             ],
           ],
         ),

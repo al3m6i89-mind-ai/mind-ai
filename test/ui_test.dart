@@ -49,6 +49,7 @@ void main() {
     await t.pumpAndSettle();
     expect(find.text('Language'), findsOneWidget);
     expect(find.text('Version 1.4.3 (21)'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('Check for updates'), 300);
   });
 
   testWidgets('long press selects chats, select all, delete selected', (t) async {
@@ -114,6 +115,7 @@ void main() {
     await t.pumpAndSettle();
     await t.tap(find.text('الإعدادات'));
     await t.pumpAndSettle();
+    await t.scrollUntilVisible(find.text('البحث عن تحديثات'), 300);
     await t.tap(find.text('البحث عن تحديثات'));
     await t.pumpAndSettle();
     expect(find.text('لديك أحدث إصدار'), findsOneWidget);
@@ -157,7 +159,7 @@ void main() {
     await pump(t);
     expect(find.text('المتابعة بحساب Google'), findsOneWidget);
     expect(find.text('الإصدار 1.4.3 (21)'), findsOneWidget);
-    expect(find.text('إرسال رمز التحقق'), findsOneWidget);
+    expect(find.text('إرسال رمز التحقق'), findsNothing); // phone sign-in is off until billing is on
   });
 
   testWidgets('attached file shows as a pending card', (t) async {
