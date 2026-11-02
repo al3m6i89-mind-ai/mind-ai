@@ -1,5 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <application
         android:label="قارئ الملفات"
         android:name="${applicationName}"
@@ -38,6 +39,25 @@
 
          In particular, this is used by the Flutter engine in io.flutter.plugin.text.ProcessTextPlugin. -->
     <queries>
+        <!-- Ad blockers, checked on the free plan (MainActivity.kt). -->
+        <package android:name="com.adguard.android"/>
+        <package android:name="com.adguard.android.contentblocker"/>
+        <package android:name="com.adguard.vpn"/>
+        <package android:name="org.blokada.sex"/>
+        <package android:name="org.blokada.fem.fdroid"/>
+        <package android:name="org.blokada.origin.alarm"/>
+        <package android:name="org.blokada.alarm.dnschanger"/>
+        <package android:name="io.nextdns.NextDNS"/>
+        <package android:name="org.jak_linux.dns66"/>
+        <package android:name="org.adaway"/>
+        <package android:name="dnsfilter.android"/>
+        <package android:name="com.celzero.bravedns"/>
+        <package android:name="eu.faircode.netguard"/>
+        <package android:name="com.adlock"/>
+        <package android:name="com.controld.setuputility"/>
+        <package android:name="app.adblockfast"/>
+        <package android:name="com.hsv.freeadblockerbrowser"/>
+        <package android:name="org.adblockplus.adblockplussbrowser"/>
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="https"/>

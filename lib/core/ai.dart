@@ -136,17 +136,24 @@ class AiClient {
     this.geminiModel = defaultGeminiModel,
     this.onModelChanged,
     this.roundPauses = const [
-      Duration(seconds: 3),
-      Duration(seconds: 8),
+      Duration(seconds: 2),
+      Duration(seconds: 6),
       Duration(seconds: 15),
       Duration(seconds: 30),
       Duration(seconds: 45),
     ],
     this.filePollInterval = const Duration(seconds: 2),
+    this.headerTimeout = const Duration(seconds: 20),
+    this.idleTimeout = const Duration(seconds: 45),
   });
 
   final Proxy proxy;
   final String freeUrl;
+
+  /// A busy server that has not even started answering is left quickly for
+  /// the next one; once text flows, pauses up to [idleTimeout] are allowed.
+  final Duration headerTimeout;
+  final Duration idleTimeout;
   final Duration filePollInterval;
 
   /// Google's alias for its current Flash model, so the app keeps working when
@@ -172,7 +179,6 @@ class AiClient {
   /// Used when the proxy's /config cannot be read. Mirrors proxy/src/index.js.
   static const defaultChain = [
     Attempt(Backend.gemini, 'gemini-flash-latest', 'g'),
-    Attempt(Backend.gemini, 'gemini-pro-latest', 'g'),
     Attempt(Backend.gemini, 'gemini-flash-lite-latest', 'g'),
     Attempt(Backend.openai, 'meta-llama/llama-4-scout-17b-16e-instruct', 'q', vision: true),
     Attempt(Backend.openai, 'openai/gpt-oss-120b', 'q'),
@@ -327,7 +333,7 @@ class AiClient {
     try {
       final http.StreamedResponse res;
       try {
-        res = await client.send(req).timeout(const Duration(seconds: 60));
+        res = await client.send(req).timeout(headerTimeout);
       } on TimeoutException {
         throw _Fail('timeout', retryable: true);
       } on SocketException {
@@ -348,7 +354,7 @@ class AiClient {
       }
       var buffer = '';
       // A stream that goes quiet for too long is treated as a dropped server.
-      await for (final chunk in res.stream.timeout(const Duration(seconds: 90)).transform(utf8.decoder)) {
+      await for (final chunk in res.stream.timeout(idleTimeout).transform(utf8.decoder)) {
         buffer += chunk;
         final lines = buffer.split('\n');
         buffer = lines.removeLast();

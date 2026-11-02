@@ -31,6 +31,7 @@ class FakeAi {
         onModelChanged: onModel,
         roundPauses: const [Duration.zero, Duration.zero],
         filePollInterval: Duration.zero,
+        headerTimeout: const Duration(milliseconds: 500),
       );
 
   Future<void> start() async {
@@ -97,6 +98,12 @@ class FakeAi {
       bodies[key] = body;
       final steps = plan[key] ?? <Object>[];
       final step = steps.isEmpty ? 200 : steps.removeAt(0);
+      if (step == 'hang') {
+        await Future<void>.delayed(const Duration(seconds: 3));
+        req.response.statusCode = 503;
+        await req.response.close();
+        return;
+      }
       if (step == 'drop') {
         (await req.response.detachSocket(writeHeaders: false)).destroy();
         return;
@@ -261,6 +268,18 @@ void main() {
     final (text, _) = await run(f.client(), conv());
     expect(text, 'ok from g:gemini-flash-latest');
     expect(f.calls, ['config', 'g:gemini-flash-latest']);
+    await f.stop();
+  });
+
+  test('a server that does not start answering is left quickly', () async {
+    final f = FakeAi({
+      'g:gemini-flash-latest': ['hang'],
+    }, config: gem);
+    await f.start();
+    final sw = Stopwatch()..start();
+    final (text, _) = await run(f.client(), conv());
+    expect(text, 'ok from g:gemini-pro-latest');
+    expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
     await f.stop();
   });
 

@@ -23,8 +23,9 @@ const PROVIDERS = {
 // `vision`: the model reads images (Gemini always does).
 const CHAIN = [
   { backend: 'gemini', model: 'gemini-flash-latest', p: 'g' },
-  { backend: 'gemini', model: 'gemini-pro-latest', p: 'g' },
   { backend: 'gemini', model: 'gemini-flash-lite-latest', p: 'g' },
+  // Pro is not in Gemini's free tier; add it here once billing is on:
+  // { backend: 'gemini', model: 'gemini-pro-latest', p: 'g' },
   { backend: 'openai', model: 'meta-llama/llama-4-scout-17b-16e-instruct', p: 'q', vision: true },
   { backend: 'openai', model: 'openai/gpt-oss-120b', p: 'q' },
   { backend: 'openai', model: 'llama-3.3-70b-versatile', p: 'q' },
