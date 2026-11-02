@@ -26,9 +26,8 @@ const CHAIN = [
   { backend: 'gemini', model: 'gemini-flash-lite-latest', p: 'g' },
   // Pro is not in Gemini's free tier; add it here once billing is on:
   // { backend: 'gemini', model: 'gemini-pro-latest', p: 'g' },
-  { backend: 'openai', model: 'meta-llama/llama-4-scout-17b-16e-instruct', p: 'q', vision: true },
   { backend: 'openai', model: 'openai/gpt-oss-120b', p: 'q' },
-  { backend: 'openai', model: 'llama-3.3-70b-versatile', p: 'q' },
+  { backend: 'openai', model: 'openai/gpt-oss-20b', p: 'q' },
   { backend: 'openai', model: 'mistral-medium-latest', p: 'm', vision: true },
   { backend: 'openai', model: 'mistral-small-latest', p: 'm', vision: true },
   { backend: 'openai', model: 'gpt-oss-120b', p: 'c' },

@@ -89,6 +89,7 @@ jobs:
               -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK\"}]}" "$URL/$p/v1/chat/completions")
             echo "$p $model: $code $(jq -r '.choices[0].message.content // .error.message // .' out.json 2>/dev/null | head -c 120)"
           done
+          echo "groq models: $(curl -s "$URL/q/v1/models" -H "x-app-token: $APP_TOKEN" | jq -r '[.data[]?.id] | join(",")' 2>/dev/null)"
           echo "wrong token: $(curl -s -o /dev/null -w '%{http_code}' "$URL/config" -H 'x-app-token: nope')"
 
   build:

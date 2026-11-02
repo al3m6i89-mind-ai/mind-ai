@@ -180,9 +180,8 @@ class AiClient {
   static const defaultChain = [
     Attempt(Backend.gemini, 'gemini-flash-latest', 'g'),
     Attempt(Backend.gemini, 'gemini-flash-lite-latest', 'g'),
-    Attempt(Backend.openai, 'meta-llama/llama-4-scout-17b-16e-instruct', 'q', vision: true),
     Attempt(Backend.openai, 'openai/gpt-oss-120b', 'q'),
-    Attempt(Backend.openai, 'llama-3.3-70b-versatile', 'q'),
+    Attempt(Backend.openai, 'openai/gpt-oss-20b', 'q'),
     Attempt(Backend.openai, 'mistral-medium-latest', 'm', vision: true),
     Attempt(Backend.openai, 'mistral-small-latest', 'm', vision: true),
     Attempt(Backend.openai, 'gpt-oss-120b', 'c'),
