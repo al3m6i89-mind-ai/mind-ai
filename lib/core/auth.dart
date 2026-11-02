@@ -61,6 +61,81 @@ class Auth extends ChangeNotifier {
 
   bool get needsSignIn => available && user == null;
 
+  /// Signed up with email and password but has not opened the confirmation link yet.
+  bool get needsEmailCheck {
+    final u = user;
+    return available && u != null && !u.emailVerified && u.providerData.any((p) => p.providerId == 'password');
+  }
+
+  /// Mail services accepted for email sign-in: well-known providers only, so
+  /// throwaway inboxes cannot be used to get more free questions.
+  static const emailDomains = {
+    'gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
+    'yahoo.com', 'icloud.com', 'me.com', 'hotmail.co.uk', 'outlook.sa', 'hotmail.fr',
+  };
+
+  /// One address per inbox: lower case; Gmail ignores dots, so they are removed
+  /// (j.ohn@gmail.com and john@gmail.com are the same account); "+tag" aliases
+  /// are refused. Returns the address to sign in with, or an error code.
+  static ({String? email, String? error}) canonicalEmail(String raw) {
+    final e = raw.trim().toLowerCase();
+    final m = RegExp(r'^([a-z0-9._+\-]+)@([a-z0-9.\-]+\.[a-z]{2,})$').firstMatch(e);
+    if (m == null) return (email: null, error: 'invalid-email');
+    var local = m.group(1)!;
+    var domain = m.group(2)!;
+    if (!emailDomains.contains(domain)) return (email: null, error: 'email-domain');
+    if (local.contains('+')) return (email: null, error: 'email-alias');
+    if (domain == 'googlemail.com') domain = 'gmail.com';
+    if (domain == 'gmail.com') local = local.replaceAll('.', '');
+    if (local.isEmpty || local.startsWith('.') || local.endsWith('.') || local.contains('..')) {
+      return (email: null, error: 'invalid-email');
+    }
+    return (email: '$local@$domain', error: null);
+  }
+
+  /// Creates the account and sends the confirmation link.
+  Future<String?> emailSignUp(String rawEmail, String password) async {
+    final c = canonicalEmail(rawEmail);
+    if (c.error != null) return c.error;
+    if (password.length < 8) return 'weak-password';
+    return _guard(() async {
+      final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: c.email!, password: password);
+      await cred.user?.sendEmailVerification();
+      return null;
+    });
+  }
+
+  Future<String?> emailSignIn(String rawEmail, String password) async {
+    final c = canonicalEmail(rawEmail);
+    if (c.error != null) return c.error;
+    return _guard(() => FirebaseAuth.instance.signInWithEmailAndPassword(email: c.email!, password: password));
+  }
+
+  Future<String?> resetPassword(String rawEmail) async {
+    final c = canonicalEmail(rawEmail);
+    if (c.error != null) return c.error;
+    return _guard(() => FirebaseAuth.instance.sendPasswordResetEmail(email: c.email!));
+  }
+
+  Future<String?> resendEmailCheck() => _guard(() async {
+        await user?.sendEmailVerification();
+        return null;
+      });
+
+  /// Asks Firebase again whether the link was opened. Returns true once confirmed.
+  Future<bool> refreshEmailCheck() async {
+    try {
+      await user?.reload();
+      user = FirebaseAuth.instance.currentUser;
+      // A fresh token carries the confirmed state to Firebase's other services.
+      if (user?.emailVerified ?? false) await user?.getIdToken(true);
+      notifyListeners();
+    } catch (e) {
+      debugPrint('auth reload: $e');
+    }
+    return !needsEmailCheck;
+  }
+
   /// Who is signed in, for the settings screen.
   String? get label {
     final u = user;

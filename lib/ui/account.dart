@@ -108,7 +108,7 @@ class AccountScreen extends StatelessWidget {
                 if (email != null && email.isNotEmpty) row(Icons.alternate_email_rounded, s.t('fEmail'), email),
                 if (phone != null && phone.isNotEmpty)
                   row(Icons.phone_iphone_rounded, s.t('fPhone'), phone),
-                row(Icons.login_rounded, s.t('fMethod'), google ? 'Google' : s.t('methodPhone')),
+                row(Icons.login_rounded, s.t('fMethod'), google ? 'Google' : (phone != null && phone.isNotEmpty) ? s.t('methodPhone') : s.t('methodEmail')),
                 row(Icons.event_outlined, s.t('fCreated'), _date(u.metadata.creationTime)),
                 row(Icons.schedule_rounded, s.t('fLastIn'), _date(u.metadata.lastSignInTime)),
               ]),

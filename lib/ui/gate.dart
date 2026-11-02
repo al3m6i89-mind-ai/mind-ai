@@ -64,7 +64,11 @@ class _StartGateState extends State<StartGate> with WidgetsBindingObserver {
     return ListenableBuilder(
       listenable: store.auth,
       builder: (context, _) {
-        final Widget page = store.auth.needsSignIn ? const LoginScreen() : const HomeScreen();
+        final Widget page = store.auth.needsSignIn
+            ? const LoginScreen()
+            : store.auth.needsEmailCheck
+                ? const VerifyEmailScreen()
+                : const HomeScreen();
         if (!_blocked || store.premium) return page;
         return _AdBlockScreen(checking: _checking, onRecheck: _check);
       },
@@ -166,11 +170,17 @@ class LoginScreen extends StatefulWidget {
 class _LoginScreenState extends State<LoginScreen> {
   final _phone = TextEditingController(text: '+');
   final _code = TextEditingController();
+  final _email = TextEditingController();
+  final _pass = TextEditingController();
   bool _busy = false;
   bool _codeSent = false;
+  bool _signUp = false;
+  bool _showPass = false;
 
   @override
   void dispose() {
+    _email.dispose();
+    _pass.dispose();
     _phone.dispose();
     _code.dispose();
     super.dispose();
@@ -192,6 +202,22 @@ class _LoginScreenState extends State<LoginScreen> {
       ..hideCurrentSnackBar()
       ..showSnackBar(SnackBar(content: Text(s.authError(err)), behavior: SnackBarBehavior.floating));
   }
+
+  Future<String?> Function() _emailErr(Future<String?> Function() f) => () async {
+        final e = await f();
+        return e == 'operation-not-allowed' ? 'operation-not-allowed-email' : e;
+      };
+
+  void _emailSubmit() {
+    final email = _email.text, pass = _pass.text;
+    _do(_emailErr(() => _signUp ? _auth.emailSignUp(email, pass) : _auth.emailSignIn(email, pass)));
+  }
+
+  void _forgot(S s) => _do(_emailErr(() => _auth.resetPassword(_email.text)), onOk: () {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(SnackBar(content: Text(s.t('resetSent')), behavior: SnackBarBehavior.floating));
+      });
 
   void _send() {
     final phone = _phone.text.replaceAll(RegExp(r'[\s\-()]'), '');
@@ -258,6 +284,67 @@ class _LoginScreenState extends State<LoginScreen> {
                   Text(s.t('withGoogle'), style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.w600)),
                 ]),
               ),
+            ),
+            const SizedBox(height: 22),
+            Row(children: [
+              const Expanded(child: Divider()),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(s.t('or'), style: TextStyle(color: context.muted)),
+              ),
+              const Expanded(child: Divider()),
+            ]),
+            const SizedBox(height: 18),
+            AutofillGroup(
+              child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                TextField(
+                  controller: _email,
+                  keyboardType: TextInputType.emailAddress,
+                  textDirection: TextDirection.ltr,
+                  autofillHints: const [AutofillHints.email],
+                  decoration: InputDecoration(
+                    labelText: s.t('emailL'),
+                    helperText: s.t('emailHelp'),
+                    prefixIcon: const Icon(Icons.mail_outline_rounded),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: _pass,
+                  obscureText: !_showPass,
+                  textDirection: TextDirection.ltr,
+                  autofillHints: [_signUp ? AutofillHints.newPassword : AutofillHints.password],
+                  onSubmitted: (_) => _emailSubmit(),
+                  decoration: InputDecoration(
+                    labelText: s.t('passwordL'),
+                    prefixIcon: const Icon(Icons.lock_outline_rounded),
+                    suffixIcon: IconButton(
+                      icon: Icon(_showPass ? Icons.visibility_off_outlined : Icons.visibility_outlined),
+                      onPressed: () => setState(() => _showPass = !_showPass),
+                    ),
+                  ),
+                ),
+              ]),
+            ),
+            if (!_signUp)
+              Align(
+                alignment: AlignmentDirectional.centerEnd,
+                child: TextButton(onPressed: _busy ? null : () => _forgot(s), child: Text(s.t('forgotPassword'))),
+              )
+            else
+              const SizedBox(height: 12),
+            SizedBox(
+              height: 50,
+              child: FilledButton(
+                onPressed: _busy ? null : _emailSubmit,
+                child: _busy
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(s.t(_signUp ? 'createAccount' : 'signIn')),
+              ),
+            ),
+            TextButton(
+              onPressed: _busy ? null : () => setState(() => _signUp = !_signUp),
+              child: Text(s.t(_signUp ? 'haveAccount' : 'noAccount')),
             ),
             if (LoginScreen.phoneLogin) ...[
               const SizedBox(height: 22),
@@ -361,4 +448,89 @@ class _GPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Shown after email sign-up until the link in the confirmation email is opened.
+class VerifyEmailScreen extends StatefulWidget {
+  const VerifyEmailScreen({super.key});
+
+  @override
+  State<VerifyEmailScreen> createState() => _VerifyEmailScreenState();
+}
+
+class _VerifyEmailScreenState extends State<VerifyEmailScreen> with WidgetsBindingObserver {
+  bool _busy = false;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  // Coming back from the mail app: check quietly whether the link was opened.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) context.read<AppStore>().auth.refreshEmailCheck();
+  }
+
+  void _say(String text) => ScaffoldMessenger.of(context)
+    ..hideCurrentSnackBar()
+    ..showSnackBar(SnackBar(content: Text(text), behavior: SnackBarBehavior.floating));
+
+  @override
+  Widget build(BuildContext context) {
+    final store = context.watch<AppStore>();
+    final s = S(store.lang);
+    final auth = store.auth;
+    final email = auth.user?.email ?? '';
+    return Scaffold(
+      bottomNavigationBar: VersionLabel(prefix: s.t('version')),
+      body: SafeArea(
+        child: ListView(
+          padding: const EdgeInsets.fromLTRB(24, 48, 24, 24),
+          children: [
+            Icon(Icons.mark_email_unread_outlined, size: 72, color: Theme.of(context).colorScheme.primary),
+            const SizedBox(height: 18),
+            Text(s.t('verifyTitle'), textAlign: TextAlign.center, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+            const SizedBox(height: 10),
+            Text(s.t('verifyText', {'email': email}),
+                textAlign: TextAlign.center, style: TextStyle(color: context.muted, height: 1.6)),
+            const SizedBox(height: 28),
+            SizedBox(
+              height: 50,
+              child: FilledButton(
+                onPressed: _busy
+                    ? null
+                    : () async {
+                        setState(() => _busy = true);
+                        final ok = await auth.refreshEmailCheck();
+                        if (!mounted) return;
+                        setState(() => _busy = false);
+                        if (!ok) _say(s.t('verifyNotYet'));
+                      },
+                child: _busy
+                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                    : Text(s.t('verifyDone')),
+              ),
+            ),
+            const SizedBox(height: 10),
+            OutlinedButton(
+              onPressed: () async {
+                final err = await auth.resendEmailCheck();
+                if (mounted) _say(err == null ? s.t('verifyResent') : s.authError(err));
+              },
+              child: Text(s.t('verifyResend')),
+            ),
+            TextButton(onPressed: auth.signOut, child: Text(s.t('verifyOther'))),
+          ],
+        ),
+      ),
+    );
+  }
 }
