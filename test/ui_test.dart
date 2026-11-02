@@ -9,6 +9,7 @@ import 'package:file_chat/core/store.dart';
 import 'package:file_chat/core/updates.dart';
 import 'package:file_chat/main.dart';
 import 'package:file_chat/ui/account.dart';
+import 'package:file_chat/ui/help.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -116,6 +117,24 @@ void main() {
     await t.tap(find.text('البحث عن تحديثات'));
     await t.pumpAndSettle();
     expect(find.text('لديك أحدث إصدار'), findsOneWidget);
+  });
+
+  testWidgets('help page: assistant, customer service, guide and FAQ', (t) async {
+    await t.pumpWidget(ChangeNotifierProvider.value(
+        value: store, child: const MaterialApp(home: Directionality(textDirection: TextDirection.rtl, child: HelpScreen()))));
+    await t.pumpAndSettle();
+    expect(find.text('5azuy2@gmail.com'), findsOneWidget);
+    expect(find.text('+96897133135'), findsOneWidget);
+    expect(find.text('طريقة الاستخدام'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('ما أنواع الملفات المدعومة؟'), 300);
+    await t.tap(find.text('ما أنواع الملفات المدعومة؟'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('PDF (حتى الممسوحة'), findsOneWidget);
+    await t.scrollUntilVisible(find.text('المساعد الذكي'), -300);
+    await t.tap(find.text('المساعد الذكي'));
+    await t.pumpAndSettle();
+    expect(find.textContaining('أنا مساعد قارئ الملفات'), findsOneWidget);
+    expect(find.text('كيف أوقف مانع الإعلانات؟'), findsOneWidget);
   });
 
   testWidgets('an ad blocker on the free plan covers the app until it is off', (t) async {

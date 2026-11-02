@@ -8,6 +8,7 @@ import '../core/store.dart';
 import '../core/updates.dart';
 import '../core/strings.dart';
 import 'account.dart';
+import 'help.dart';
 import 'plans.dart';
 import 'theme.dart';
 import 'update_sheet.dart';
@@ -157,6 +158,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 ],
                 selected: {store.lang},
                 onSelectionChanged: (v) => store.setLang(v.first),
+              ),
+            ]),
+            section(s.t('help'), [
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.help_outline_rounded, color: primary),
+                title: Text(s.t('help')),
+                subtitle: Text('${s.t('helpBot')} · ${s.t('customerService')} · ${s.t('faq')}',
+                    style: TextStyle(color: context.muted, fontSize: 12.5)),
+                trailing: const Icon(Icons.chevron_right_rounded),
+                onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen())),
               ),
             ]),
             section(s.t('about'), [

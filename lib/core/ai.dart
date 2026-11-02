@@ -145,7 +145,11 @@ class AiClient {
     this.filePollInterval = const Duration(seconds: 2),
     this.headerTimeout = const Duration(seconds: 20),
     this.idleTimeout = const Duration(seconds: 45),
+    this.system = _system,
   });
+
+  /// Instructions sent with every request (the help bot uses its own).
+  final String system;
 
   final Proxy proxy;
   final String freeUrl;
@@ -314,7 +318,7 @@ class AiClient {
             'contents': contents,
             'systemInstruction': {
               'parts': [
-                {'text': _system},
+                {'text': system},
               ],
             },
           });
@@ -564,7 +568,7 @@ class AiClient {
   /// inline (Mistral wants the data URL as a plain string).
   Future<List<Map<String, dynamic>>> _openAiMessages(Conversation conv, {bool images = true, bool stringImages = false}) async {
     final messages = <Map<String, dynamic>>[
-      {'role': 'system', 'content': _system},
+      {'role': 'system', 'content': system},
     ];
     for (final m in _history(conv)) {
       final role = m.role == Role.assistant ? 'assistant' : 'user';

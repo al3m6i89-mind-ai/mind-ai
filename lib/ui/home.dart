@@ -13,6 +13,7 @@ import '../core/store.dart';
 import '../core/strings.dart';
 import 'account.dart';
 import 'attachment_card.dart';
+import 'help.dart';
 import 'message_view.dart';
 import 'plans.dart';
 import 'settings.dart';
@@ -859,6 +860,14 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => const AccountScreen()));
                   },
                 ),
+              ListTile(
+                leading: const Icon(Icons.help_outline_rounded),
+                title: Text(s.t('help'), style: const TextStyle(fontWeight: FontWeight.w500)),
+                onTap: () {
+                  Navigator.pop(context);
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const HelpScreen()));
+                },
+              ),
               ListTile(
                 leading: const Icon(Icons.tune_rounded),
                 title: Text(s.t('settings'), style: const TextStyle(fontWeight: FontWeight.w500)),
