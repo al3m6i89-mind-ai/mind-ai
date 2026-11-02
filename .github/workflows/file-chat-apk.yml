@@ -65,6 +65,25 @@ jobs:
           npx --yes wrangler@4 secret bulk /tmp/secrets.json
           rm /tmp/secrets.json
           echo "url=https://file-chat-proxy.$sub.workers.dev" >> "$GITHUB_OUTPUT"
+      - name: Check proxy
+        if: steps.deploy.outputs.url != ''
+        continue-on-error: true
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          sleep 10
+          curl -sS -o cfg.json -w "config: %{http_code}\n" "$URL/config" -H "x-app-token: $APP_TOKEN"
+          jq -c '[.chain[] | .p + ":" + .model]' cfg.json
+          for m in $(jq -r '.chain[] | select(.backend=="gemini") | .model' cfg.json); do
+            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+              -d '{"contents":[{"parts":[{"text":"Reply with the single word OK"}]}]}' \
+              "$URL/g/v1beta/models/$m:generateContent")
+            echo "$m: $code $(jq -r '.candidates[0].content.parts[0].text // .error.message' out.json | head -c 120)"
+          done
+          code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+            -d '{"model":"openai","messages":[{"role":"user","content":"Reply with the single word OK"}]}' "$URL/p/v1/chat/completions")
+          echo "pollinations: $code $(head -c 160 out.json)"
+          echo "wrong token: $(curl -s -o /dev/null -w '%{http_code}' "$URL/config" -H 'x-app-token: nope')"
 
   build:
     needs: proxy
