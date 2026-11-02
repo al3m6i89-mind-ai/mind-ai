@@ -9,6 +9,7 @@ import '../core/strings.dart';
 import 'account.dart';
 import 'plans.dart';
 import 'theme.dart';
+import 'version_label.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -40,6 +41,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(s.t('settings'))),
+      bottomNavigationBar: VersionLabel(prefix: s.t('version')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),

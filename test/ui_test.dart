@@ -10,11 +10,15 @@ import 'package:file_chat/main.dart';
 import 'package:file_chat/ui/account.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 void main() {
   late AppStore store;
+
+  setUpAll(() => PackageInfo.setMockInitialValues(
+      appName: 'File Chat', packageName: 'com.zuhair.file_chat', version: '1.4.3', buildNumber: '21', buildSignature: ''));
 
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -40,6 +44,7 @@ void main() {
     await t.tap(find.text('English'));
     await t.pumpAndSettle();
     expect(find.text('Language'), findsOneWidget);
+    expect(find.text('Version 1.4.3 (21)'), findsOneWidget);
   });
 
   testWidgets('long press selects chats, select all, delete selected', (t) async {
@@ -100,6 +105,7 @@ void main() {
         adBlockCheck: () async => false, auth: Auth.signedOutForTest());
     await pump(t);
     expect(find.text('المتابعة بحساب Google'), findsOneWidget);
+    expect(find.text('الإصدار 1.4.3 (21)'), findsOneWidget);
     expect(find.text('إرسال رمز التحقق'), findsOneWidget);
   });
 

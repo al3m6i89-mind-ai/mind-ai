@@ -7,6 +7,7 @@ import '../core/strings.dart';
 import 'home.dart';
 import 'plans.dart';
 import 'theme.dart';
+import 'version_label.dart';
 
 /// The first screen: sign-in when it is set up, then the chats. On the free
 /// plan an ad blocker covers the app with a request to turn it off; it is
@@ -203,6 +204,7 @@ class _LoginScreenState extends State<LoginScreen> {
     final s = S(store.lang);
     final scheme = Theme.of(context).colorScheme;
     return Scaffold(
+      bottomNavigationBar: VersionLabel(prefix: s.t('version')),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
