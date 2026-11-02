@@ -68,3 +68,13 @@ Future<bool> detectAdBlocker() async {
   }
   return false;
 }
+
+/// Android's ID for this app on this phone. It survives reinstalling, so the
+/// proxy can count free questions per phone. Null off Android or in tests.
+Future<String?> deviceId() async {
+  try {
+    return await _channel.invokeMethod<String>('deviceId');
+  } catch (_) {
+    return null;
+  }
+}

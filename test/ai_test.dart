@@ -18,6 +18,7 @@ class FakeAi {
   final calls = <String>[];
   final bodies = <String, Map<String, dynamic>>{};
   final slots = <String>[];
+  final userTokens = <String, String?>{};
   int uploaded = 0;
   late HttpServer server;
 
@@ -96,6 +97,7 @@ class FakeAi {
       }
       calls.add(key);
       bodies[key] = body;
+      userTokens[key] = req.headers.value('x-user-token');
       final steps = plan[key] ?? <Object>[];
       final step = steps.isEmpty ? 200 : steps.removeAt(0);
       if (step == 'hang') {
@@ -106,6 +108,14 @@ class FakeAi {
       }
       if (step == 'drop') {
         (await req.response.detachSocket(writeHeaders: false)).destroy();
+        return;
+      }
+      if (step == 'quota') {
+        req.response
+          ..statusCode = 429
+          ..headers.set('x-proxy-error', 'quota')
+          ..headers.set('x-quota-left', '0');
+        await req.response.close();
         return;
       }
       if (step == 'unconfigured') {
@@ -190,6 +200,40 @@ const gem = [
 ];
 
 void main() {
+  test('out of free questions: no other server answers instead', () async {
+    final f = FakeAi({
+      'g:gemini-flash-latest': ['quota'],
+    }, config: gem);
+    await f.start();
+    int? left;
+    final ai = AiClient(
+      proxy: Proxy(f.url, 'tok'),
+      freeUrl: '${f.url}/direct',
+      roundPauses: const [Duration.zero],
+      session: const {'x-user-token': 'id-token', 'x-question-id': 'q1'},
+      onQuotaLeft: (n) => left = n,
+    );
+    await expectLater(run(ai, conv()), throwsA(isA<AiException>().having((e) => e.message, 'code', 'quota')));
+    expect(f.calls, ['config', 'g:gemini-flash-latest']);
+    expect(f.userTokens['g:gemini-flash-latest'], 'id-token');
+    expect(left, 0);
+    await f.stop();
+  });
+
+  test('who is asking goes to the proxy only, never to the direct free server', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    final ai = AiClient(
+        proxy: Proxy(f.url, 'wrong'),
+        freeUrl: '${f.url}/direct',
+        roundPauses: const [Duration.zero],
+        session: const {'x-user-token': 'id-token'});
+    final (text, _) = await run(ai, conv());
+    expect(text, 'ok from direct');
+    expect(f.userTokens['direct'], isNull);
+    await f.stop();
+  });
+
   test('busy Gemini moves straight to the next model, through the proxy', () async {
     final f = FakeAi({
       'g:gemini-flash-latest': [503],

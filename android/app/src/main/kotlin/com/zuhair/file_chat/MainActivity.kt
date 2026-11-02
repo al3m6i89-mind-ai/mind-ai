@@ -26,6 +26,9 @@ class MainActivity : FlutterActivity() {
         super.configureFlutterEngine(flutterEngine)
         updatesChannel(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "file_chat/adblock").setMethodCallHandler { call, result ->
+            if (call.method == "deviceId") {
+                return@setMethodCallHandler result.success(safe { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) })
+            }
             if (call.method != "scan") return@setMethodCallHandler result.notImplemented()
             result.success(
                 mapOf(

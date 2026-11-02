@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -78,9 +80,61 @@ class AppStore extends ChangeNotifier {
 
   int get maxFileBytes => premium ? Plan.premiumMaxFileBytes : Plan.freeMaxFileBytes;
 
+  // The proxy counts questions per UTC day, so the phone's count follows the same day.
   String get _today {
-    final d = DateTime.now();
+    final d = DateTime.now().toUtc();
     return '${d.year}-${d.month}-${d.day}';
+  }
+
+  /// Takes the proxy's count of questions left today as the truth.
+  void _serverLeft(int left) {
+    if (premium) return;
+    final used = (Plan.freeDailyQuestions - left).clamp(0, Plan.freeDailyQuestions);
+    if (used == questionsToday) return;
+    _prefs.setString('qDay', _today);
+    _prefs.setInt('qCount', used);
+    notifyListeners();
+  }
+
+  String? _deviceId;
+  final Map<String, String> _questionIds = {};
+
+  /// What the proxy needs to know who is asking (see [AiClient.session]).
+  Future<Map<String, String>> aiSession({String kind = 'ask', String? questionId}) async {
+    String? token;
+    try {
+      token = await auth.user?.getIdToken();
+    } catch (e) {
+      debugPrint('id token: $e');
+    }
+    _deviceId ??= await deviceId();
+    return {
+      'x-user-token': ?token,
+      if (_deviceId != null && _deviceId!.isNotEmpty) 'x-device-id': _deviceId!,
+      'x-question-id': questionId ?? _uuid.v4(),
+      'x-kind': kind,
+      'x-plan': premium ? 'premium' : 'free',
+    };
+  }
+
+  /// Asks the proxy how many free questions are left today.
+  Future<void> syncQuota() async {
+    if (!auth.available || auth.user == null || premium) return;
+    try {
+      final p = Proxy.build;
+      if (p.base.isEmpty) return;
+      final session = await aiSession()
+        ..remove('x-question-id');
+      final res = await http
+          .get(Uri.parse('${p.base}/quota'), headers: {'x-app-token': p.token, ...session})
+          .timeout(const Duration(seconds: 15));
+      if (res.statusCode == 200) {
+        final left = (jsonDecode(res.body) as Map<String, dynamic>)['left'];
+        if (left is num && left >= 0) _serverLeft(left.toInt());
+      }
+    } catch (e) {
+      debugPrint('quota sync: $e');
+    }
   }
 
   int get questionsToday => _prefs.getString('qDay') == _today ? (_prefs.getInt('qCount') ?? 0) : 0;
@@ -266,6 +320,7 @@ class AppStore extends ChangeNotifier {
     if (!canAsk) return false;
     _countQuestion();
     final conv = await _ensureConversation(defaultTitle);
+    _questionIds[conv.id] = _uuid.v4();
     final userMsg = Message(id: _uuid.v4(), role: Role.user, text: t, attachments: List.of(pending));
     pending.clear();
     conv.messages.add(userMsg);
@@ -284,9 +339,11 @@ class AppStore extends ChangeNotifier {
     if (conv == null || streaming || conv.messages.isEmpty) return true;
     // Retrying a failed answer is free; asking again for a good one counts.
     final failed = conv.messages.last.role == Role.assistant && conv.messages.last.status == MsgStatus.error;
-    if (!failed) {
+    if (!failed || !_questionIds.containsKey(conv.id)) {
       if (!canAsk) return false;
       _countQuestion();
+      // A new question for the proxy; retrying a failed answer keeps the old id.
+      _questionIds[conv.id] = _uuid.v4();
     }
     if (conv.messages.last.role == Role.assistant) conv.messages.removeLast();
     await _answer(conv);
@@ -297,7 +354,10 @@ class AppStore extends ChangeNotifier {
     final reply = Message(id: _uuid.v4(), role: Role.assistant, text: '', status: MsgStatus.streaming);
     conv.updatedAt = DateTime.now();
     _sort();
+    final session = await aiSession(questionId: _questionIds[conv.id]);
     final client = AiClient(
+      session: session,
+      onQuotaLeft: _serverLeft,
       preferPro: premium,
       geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
       onModelChanged: (m) => _prefs.setString('geminiModel', m),

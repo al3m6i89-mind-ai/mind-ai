@@ -146,7 +146,22 @@ class AiClient {
     this.headerTimeout = const Duration(seconds: 20),
     this.idleTimeout = const Duration(seconds: 45),
     this.system = _system,
+    this.session = const {},
+    this.onQuotaLeft,
   });
+
+  /// Who is asking, sent with every request to the proxy: the signed-in user's
+  /// token, the device, the question's id (all requests for one answer share it)
+  /// and the plan. The proxy counts the daily questions from these.
+  final Map<String, String> session;
+
+  /// The proxy's count of questions left today, from each response.
+  final void Function(int left)? onQuotaLeft;
+
+  void _quota(Map<String, String> headers) {
+    final left = int.tryParse(headers['x-quota-left'] ?? '');
+    if (left != null) onQuotaLeft?.call(left);
+  }
 
   /// Instructions sent with every request (the help bot uses its own).
   final String system;
@@ -281,7 +296,8 @@ class AiClient {
           }
           final d = f.detail == null ? '' : ' — ${f.detail}';
           yield AiTrace('$a: ${f.code}$d');
-          if (f.code == 'blocked') throw AiException('blocked');
+          // Out of questions or signed out: no other server may answer instead.
+          if (const {'blocked', 'quota', 'signIn'}.contains(f.code)) throw AiException(f.code);
           if (f.proxyDead) proxyDead = true;
           if (f.providerDead) deadProviders.add(a.provider);
           if (!f.retryable) dead.add('$a');
@@ -302,6 +318,7 @@ class AiClient {
 
   Map<String, String> _headers(Attempt a, [int? slot]) => {
         if (!a.direct && proxy.token.isNotEmpty) 'x-app-token': proxy.token,
+        if (!a.direct) ...session,
         if (slot != null) 'x-key-slot': '$slot',
       };
 
@@ -348,6 +365,7 @@ class AiClient {
         final body = await res.stream.bytesToString();
         throw _failFor(a, res.statusCode, body, res.headers);
       }
+      _quota(res.headers);
       final sse = (res.headers['content-type'] ?? '').contains('event-stream');
       if (!sse) {
         final raw = await res.stream.bytesToString();
@@ -407,6 +425,13 @@ class AiClient {
     final detail = 'HTTP $code ${_short(msg)}';
     // The proxy's own answers are marked, so they are not mistaken for the service's.
     if (headers['x-proxy-error'] == 'token') return _Fail('busy', proxyDead: true, detail: detail);
+    if (headers['x-proxy-error'] == 'quota') {
+      _quota(headers);
+      return _Fail('quota', detail: detail);
+    }
+    if (headers['x-proxy-error'] == 'auth') return _Fail('signIn', detail: detail);
+    if (headers['x-proxy-error'] == 'question') return _Fail('busy', proxyDead: true, detail: detail);
+    if (headers['x-proxy-error'] == 'path') return _Fail('busy', proxyDead: true, detail: detail);
     if (headers['x-proxy-error'] == 'unconfigured') return _Fail('busy', providerDead: true, detail: detail);
     if (code == 401 || code == 403 || (code == 400 && msg.contains('API key'))) {
       // One of the proxy's keys is bad; the next attempt draws another.

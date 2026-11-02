@@ -59,8 +59,9 @@ class AccountScreen extends StatelessWidget {
           ]),
         );
 
-    final now = DateTime.now();
-    final left = DateTime(now.year, now.month, now.day + 1).difference(now);
+    // Free questions renew at midnight UTC, when the proxy starts a new day.
+    final now = DateTime.now().toUtc();
+    final left = DateTime.utc(now.year, now.month, now.day + 1).difference(now);
     final price = store.billing.product?.price;
 
     final initial = (name ?? email ?? phone ?? '?').trim();
@@ -172,6 +173,40 @@ class AccountScreen extends StatelessWidget {
                     if (context.mounted) Navigator.popUntil(context, (r) => r.isFirst);
                   }
                 },
+              ),
+            if (u != null)
+              Padding(
+                padding: const EdgeInsets.only(top: 8),
+                child: TextButton(
+                  style: TextButton.styleFrom(foregroundColor: context.danger),
+                  onPressed: () async {
+                    final ok = await showDialog<bool>(
+                      context: context,
+                      builder: (ctx) => AlertDialog(
+                        title: Text(s.t('deleteAccountQ')),
+                        content: Text(s.t('deleteAccountText')),
+                        actions: [
+                          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(s.t('cancel'))),
+                          FilledButton(
+                            style: FilledButton.styleFrom(backgroundColor: context.danger),
+                            onPressed: () => Navigator.pop(ctx, true),
+                            child: Text(s.t('delete')),
+                          ),
+                        ],
+                      ),
+                    );
+                    if (ok != true) return;
+                    final err = await store.auth.deleteAccount();
+                    if (!context.mounted) return;
+                    if (err == null) {
+                      Navigator.popUntil(context, (r) => r.isFirst);
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text(s.authError(err)), behavior: SnackBarBehavior.floating));
+                    }
+                  },
+                  child: Text(s.t('deleteAccount')),
+                ),
               ),
           ],
         ),

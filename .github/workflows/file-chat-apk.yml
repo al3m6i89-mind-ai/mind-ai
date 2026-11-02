@@ -75,22 +75,24 @@ jobs:
           curl -sS -o cfg.json -w "config: %{http_code}\n" "$URL/config" -H "x-app-token: $APP_TOKEN"
           jq -c '[.chain[] | .p + ":" + .model]' cfg.json
           for m in $(jq -r '.chain[] | select(.backend=="gemini") | .model' cfg.json); do
-            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS" -H 'Content-Type: application/json' \
               -d '{"contents":[{"parts":[{"text":"Reply with the single word OK"}]}]}' \
               "$URL/g/v1beta/models/$m:generateContent")
             echo "$m: $code $(jq -r '.candidates[0].content.parts[0].text // .error.message' out.json | head -c 120)"
           done
-          code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+          code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS" -H 'Content-Type: application/json' \
             -d '{"model":"openai","messages":[{"role":"user","content":"Reply with the single word OK"}]}' "$URL/p/v1/chat/completions")
           echo "pollinations: $code $(head -c 160 out.json)"
           for m in $(jq -r '.chain[] | select(.backend=="openai" and .p!="p") | .p + "|" + .model' cfg.json); do
             p=${m%%|*}; model=${m#*|}
-            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS" -H 'Content-Type: application/json' \
               -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK\"}]}" "$URL/$p/v1/chat/completions")
             echo "$p $model: $code $(jq -r '.choices[0].message.content // .error.message // .' out.json 2>/dev/null | head -c 120)"
           done
-          echo "groq models: $(curl -s "$URL/q/v1/models" -H "x-app-token: $APP_TOKEN" | jq -r '[.data[]?.id] | join(",")' 2>/dev/null)"
+          echo "groq models: $(curl -s "$URL/q/v1/models" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS" | jq -r '[.data[]?.id] | join(",")' 2>/dev/null)"
           echo "wrong token: $(curl -s -o /dev/null -w '%{http_code}' "$URL/config" -H 'x-app-token: nope')"
+          echo "no sign-in: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/q/v1/chat/completions" -H "x-app-token: $APP_TOKEN")"
+          echo "other path: $(curl -s -o /dev/null -w '%{http_code}' "$URL/g/v1beta/files" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS")"
 
   build:
     needs: proxy

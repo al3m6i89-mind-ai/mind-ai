@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted && store.updates.hasUpdate) showUpdateSheet(context, store.updates, s);
     });
     store.updates.start(arabic: store.lang == 'ar');
+    store.syncQuota();
   }
 
   @override

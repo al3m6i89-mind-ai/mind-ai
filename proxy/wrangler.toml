@@ -2,3 +2,15 @@ name = "file-chat-proxy"
 main = "src/index.js"
 compatibility_date = "2025-09-01"
 workers_dev = true
+
+[vars]
+FIREBASE_PROJECT = "file-chat-224b4"
+
+# Daily question counts per user and device (SQLite storage, available on the free plan).
+[[durable_objects.bindings]]
+name = "QUOTA"
+class_name = "Quota"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Quota"]

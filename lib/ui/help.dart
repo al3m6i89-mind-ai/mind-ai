@@ -222,7 +222,6 @@ class _HelpChatScreenState extends State<HelpChatScreen> {
   final _conv = Conversation(id: 'help', title: 'help');
   final _input = TextEditingController();
   final _scroll = ScrollController();
-  late final AiClient _client = widget.client ?? AiClient(system: helpBotPrompt);
   StreamSubscription<AiEvent>? _sub;
   bool get _busy => _sub != null;
 
@@ -234,15 +233,23 @@ class _HelpChatScreenState extends State<HelpChatScreen> {
     super.dispose();
   }
 
-  void _send(String text, S s) {
+  bool _starting = false;
+
+  Future<void> _send(String text, S s) async {
     text = text.trim();
-    if (text.isEmpty || _busy) return;
+    if (text.isEmpty || _busy || _starting) return;
     _input.clear();
+    _starting = true;
+    // The help assistant has its own daily allowance on the proxy.
+    final client = widget.client ??
+        AiClient(system: helpBotPrompt, session: await context.read<AppStore>().aiSession(kind: 'help'));
+    _starting = false;
+    if (!mounted) return;
     final reply = Message(id: 'a${_conv.messages.length}', role: Role.assistant, text: '', status: MsgStatus.streaming);
     setState(() {
       _conv.messages.add(Message(id: 'u${_conv.messages.length}', role: Role.user, text: text));
     });
-    final stream = _client.reply(_conv);
+    final stream = client.reply(_conv);
     setState(() => _conv.messages.add(reply));
     _toBottom();
     _sub = stream.listen(

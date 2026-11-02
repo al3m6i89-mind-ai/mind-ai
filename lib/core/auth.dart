@@ -207,6 +207,13 @@ class Auth extends ChangeNotifier {
         .signInWithCredential(PhoneAuthProvider.credential(verificationId: id, smsCode: code.trim())));
   }
 
+  /// Deletes the account on Firebase. Returns null or an error code
+  /// ('requires-recent-login' when the sign-in is too old).
+  Future<String?> deleteAccount() => _guard(() async {
+        await user?.delete();
+        return null;
+      });
+
   Future<void> signOut() async {
     if (available) await FirebaseAuth.instance.signOut();
   }
