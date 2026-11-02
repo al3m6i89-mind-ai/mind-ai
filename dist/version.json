@@ -1,7 +1,7 @@
 {
-  "version": "1.8.2",
-  "build": 37,
+  "version": "1.9.0",
+  "build": 38,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• اسأل بصوتك: اضغط الميكروفون وتكلّم\n• زر مشاركة تحت كل إجابة\n• بحث أذكى في المحادثات\n• رسائل البريد بالعربي\n• صفحة سياسة الخصوصية\n• تحسينات أمان وحماية للخصوصية",
-  "notes_en": "• Ask by voice: tap the mic and speak\n• Share button under every answer\n• Smarter chat search\n• Emails in your language\n• Privacy policy page\n• Security and privacy improvements"
+  "notes_ar": "• دائرة تعرض نسبة تحميل الملف من 0 إلى 100%\n• تحميل أسرع للملفات الكبيرة\n• إجابات أسرع وأدق في الكتب الكبيرة: يبحث عن الصفحات المتعلقة بسؤالك\n• اسأل عن صفحة معيّنة برقمها",
+  "notes_en": "• A ring shows file loading from 0 to 100%\n• Faster loading of big files\n• Faster, more accurate answers in big books: finds the pages your question is about\n• Ask about a page by its number"
 }
