@@ -34,6 +34,7 @@ jobs:
       OPENROUTER_KEYS: ${{ secrets.OPENROUTER_KEYS }}
       CEREBRAS_KEYS: ${{ secrets.CEREBRAS_KEYS }}
       POLLINATIONS_TOKEN: ${{ secrets.POLLINATIONS_TOKEN }}
+      PLAY_SERVICE_ACCOUNT: ${{ secrets.PLAY_SERVICE_ACCOUNT }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -59,7 +60,7 @@ jobs:
           npx --yes wrangler@4 deploy
           # Only the secrets that are set; values never reach the log.
           node -e '
-            const names = ["APP_TOKEN","GEMINI_KEYS","GROQ_KEYS","MISTRAL_KEYS","OPENROUTER_KEYS","CEREBRAS_KEYS","POLLINATIONS_TOKEN"];
+            const names = ["APP_TOKEN","GEMINI_KEYS","GROQ_KEYS","MISTRAL_KEYS","OPENROUTER_KEYS","CEREBRAS_KEYS","POLLINATIONS_TOKEN","PLAY_SERVICE_ACCOUNT"];
             const out = {}; for (const n of names) if (process.env[n]) out[n] = process.env[n];
             require("fs").writeFileSync("/tmp/secrets.json", JSON.stringify(out));'
           npx --yes wrangler@4 secret bulk /tmp/secrets.json
@@ -93,6 +94,9 @@ jobs:
           echo "wrong token: $(curl -s -o /dev/null -w '%{http_code}' "$URL/config" -H 'x-app-token: nope')"
           echo "no sign-in: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/q/v1/chat/completions" -H "x-app-token: $APP_TOKEN")"
           echo "other path: $(curl -s -o /dev/null -w '%{http_code}' "$URL/g/v1beta/files" -H "x-app-token: $APP_TOKEN" -H "x-ci: $GEMINI_KEYS")"
+          echo "privacy page: $(curl -s -o /dev/null -w '%{http_code}' "$URL/privacy")"
+          echo "delete page: $(curl -s -o /dev/null -w '%{http_code}' "$URL/delete")"
+          echo "voice path: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/q/v1/audio/transcriptions" -H "x-app-token: $APP_TOKEN")"
 
   build:
     needs: proxy

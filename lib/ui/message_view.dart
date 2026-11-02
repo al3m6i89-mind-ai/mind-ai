@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../core/models.dart';
@@ -12,6 +13,7 @@ class MessageView extends StatelessWidget {
   const MessageView({
     super.key,
     required this.message,
+    this.question,
     required this.s,
     required this.isLast,
     required this.onRetry,
@@ -19,6 +21,9 @@ class MessageView extends StatelessWidget {
   });
 
   final Message message;
+
+  /// The user's question this message answers, included when sharing.
+  final String? question;
   final S s;
   final bool isLast;
   final Future<void> Function() onRetry;
@@ -158,6 +163,13 @@ class MessageView extends StatelessWidget {
                 icon: Icon(Icons.copy_rounded, size: 18, color: context.muted),
                 onPressed: () => _copy(context),
               ),
+            if (m.text.isNotEmpty && m.status == MsgStatus.complete)
+              IconButton(
+                tooltip: s.t('share'),
+                visualDensity: VisualDensity.compact,
+                icon: Icon(Icons.share_outlined, size: 18, color: context.muted),
+                onPressed: () => _share(context),
+              ),
             if (isLast)
               IconButton(
                 tooltip: s.t('retry'),
@@ -168,6 +180,24 @@ class MessageView extends StatelessWidget {
           ]),
       ],
     );
+  }
+
+  /// The question and its answer (which names its source file), as plain text.
+  String shareText() {
+    final q = question?.trim() ?? '';
+    return [
+      if (q.isNotEmpty) '❓ ${s.t('questionL')}: $q\n',
+      '💡 ${s.t('answerL')}:\n${message.text.trim()}',
+      '\n— ${s.t('sharedFrom')}',
+    ].join('\n');
+  }
+
+  void _share(BuildContext context) {
+    final box = context.findRenderObject() as RenderBox?;
+    SharePlus.instance.share(ShareParams(
+      text: shareText(),
+      sharePositionOrigin: box == null ? null : box.localToGlobal(Offset.zero) & box.size,
+    ));
   }
 
   String _note(String note) => s.t('waitingRetry');

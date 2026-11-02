@@ -1,5 +1,5 @@
 // node proxy/test.mjs — checks routing, auth and key injection with a stubbed fetch.
-import worker, { verifyIdToken, quotaCheck, _resetJwksForTest, Quota } from './src/index.js';
+import worker, { verifyIdToken, quotaCheck, _resetJwksForTest, Quota, subscriptionUntil, saveSub, premiumUntil, PRODUCT } from './src/index.js';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 
@@ -129,7 +129,95 @@ assert.equal(r.headers.get('x-proxy-error'), 'quota');
 r = await ai({ ...good, 'x-question-id': 'h1', 'x-kind': 'help' });
 assert.equal(r.status, 200, 'the help assistant has its own allowance');
 r = await worker.fetch(req('/quota', 't', 'GET', good), authEnv);
-assert.deepEqual(await r.json(), { left: 0, limit: 20 });
+assert.deepEqual(await r.json(), { left: 0, limit: 20, plan: 'free', until: 0, verify: false });
+r = await ai({ ...good, 'x-question-id': 'q22', 'x-plan': 'premium' });
+assert.equal(r.status, 429, 'saying "premium" does not unlock the paid limits');
+r = await ai({ ...good, 'x-question-id': 'v1', 'x-kind': 'voice' });
+assert.equal(r.status, 200, 'voice has its own allowance');
+assert.equal(r.headers.get('x-quota-limit'), '30');
+
+// Voice: speech to text only on Groq.
+r = await worker.fetch(req('/q/v1/audio/transcriptions'), env);
+assert.equal(r.status, 200);
+assert.equal(seen.at(-1).url, 'https://api.groq.com/openai/v1/audio/transcriptions');
+r = await worker.fetch(req('/o/v1/audio/transcriptions'), { ...env, OPENROUTER_KEYS: 'o1' });
+assert.equal(r.status, 403, 'not on other services');
+
+// Public pages need no app token.
+for (const path of ['/privacy', '/delete']) {
+  r = await worker.fetch(new Request('https://proxy.example' + path), env);
+  assert.equal(r.status, 200, path);
+  assert.match(r.headers.get('content-type'), /text\/html/);
+  assert.match(await r.text(), /5azuy2@gmail\.com/);
+}
+
+// Subscriptions.
+const tnow = Date.now();
+const item = (ms) => [{ productId: PRODUCT, expiryTime: new Date(tnow + ms).toISOString() }];
+assert.ok(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: item(86400000) }, tnow) > tnow);
+assert.ok(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_CANCELED', lineItems: item(86400000) }, tnow) > tnow, 'cancelled keeps access until the end');
+assert.equal(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED', lineItems: item(86400000) }, tnow), 0);
+assert.equal(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: item(-1000) }, tnow), 0);
+assert.equal(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: [{ productId: 'other', expiryTime: new Date(tnow + 9e6).toISOString() }] }, tnow), 0);
+const sdb = sqlOf(new DatabaseSync(':memory:'));
+assert.equal(saveSub(sdb, { token: 'T1', uid: 'a', expiry: tnow + 1000, tnow }).ok, true);
+assert.equal(premiumUntil(sdb, 'a', tnow), tnow + 1000);
+assert.equal(saveSub(sdb, { token: 'T1', uid: 'b', expiry: tnow + 1000, tnow }).why, 'other-account', 'one subscription, one account');
+assert.equal(premiumUntil(sdb, 'a', tnow + 2000), 0, 'expired');
+
+// /purchase checks the token with Google Play, then the account gets the paid limits.
+r = await worker.fetch(req('/purchase', 't', 'POST', good), authEnv);
+assert.equal(r.status, 503, 'without a service account nothing is unlocked');
+const pk = await crypto.subtle.generateKey({ name: 'RSASSA-PKCS1-v1_5', modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: 'SHA-256' }, true, ['sign', 'verify']);
+const pkcs8 = Buffer.from(await crypto.subtle.exportKey('pkcs8', pk.privateKey)).toString('base64');
+const sa = JSON.stringify({ client_email: 'play@x.iam.gserviceaccount.com', private_key: `-----BEGIN PRIVATE KEY-----\n${pkcs8}\n-----END PRIVATE KEY-----\n` });
+const stubFetch = globalThis.fetch;
+let playState = 'SUBSCRIPTION_STATE_ACTIVE';
+globalThis.fetch = async (url, init) => {
+  url = String(url);
+  if (url === 'https://oauth2.googleapis.com/token') {
+    const jwt = new URLSearchParams(init.body).get('assertion').split('.');
+    const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', pk.publicKey, Buffer.from(jwt[2], 'base64url'), new TextEncoder().encode(jwt[0] + '.' + jwt[1]));
+    assert.ok(ok, 'the OAuth assertion is signed with the service account key');
+    return Response.json({ access_token: 'AT', expires_in: 3600 });
+  }
+  if (url.startsWith('https://androidpublisher.googleapis.com/')) {
+    assert.equal(init.headers.authorization, 'Bearer AT');
+    assert.match(url, /applications\/com\.zuhair\.file_chat\/purchases\/subscriptionsv2\/tokens\/purchase-token-123$/);
+    return Response.json({ subscriptionState: playState, lineItems: item(30 * 86400000) });
+  }
+  return stubFetch(url, init);
+};
+const playEnv = { ...authEnv, PLAY_SERVICE_ACCOUNT: sa };
+const buy = (body, h = good) => worker.fetch(new Request('https://proxy.example/purchase', {
+  method: 'POST', headers: { 'x-app-token': 't', ...h }, body: JSON.stringify(body) }), playEnv);
+r = await buy({ purchaseToken: 'purchase-token-123' });
+let j = await r.json();
+assert.equal(j.premium, true);
+r = await worker.fetch(req('/quota', 't', 'GET', good), playEnv);
+j = await r.json();
+assert.equal(j.plan, 'premium');
+assert.equal(j.limit, 300);
+r = await ai({ ...good, 'x-question-id': 'q23' });
+assert.equal(r.status, 200, 'a verified subscriber can keep asking');
+const other = { ...good, 'x-user-token': await token({ sub: 'w2' }), 'x-device-id': 'dev2' };
+j = await (await buy({ purchaseToken: 'purchase-token-123' }, other)).json();
+assert.deepEqual([j.premium, j.why], [false, 'other-account'], 'the same purchase cannot unlock another account');
+playState = 'SUBSCRIPTION_STATE_EXPIRED';
+const third = { ...good, 'x-user-token': await token({ sub: 'w3' }) };
+j = await (await buy({ purchaseToken: 'purchase-token-123' }, third)).json();
+assert.equal(j.premium, false);
+assert.equal((await buy({ purchaseToken: '../x' })).status, 400);
+globalThis.fetch = stubFetch;
+
+// Deleting the account removes its subscription; counts stay until they expire.
+r = await worker.fetch(req('/account', 't', 'DELETE', good), playEnv);
+assert.equal(r.status, 200);
+r = await worker.fetch(req('/quota', 't', 'GET', good), playEnv);
+j = await r.json();
+assert.deepEqual([j.plan, j.left, j.verify], ['free', 0, true], 'deleting does not hand out new free questions');
+r = await worker.fetch(req('/account', 't', 'DELETE', {}), authEnv);
+assert.equal(r.status, 401);
 r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-ci': 'k1, k2' }), authEnv);
 assert.equal(r.status, 200, 'the deploy check passes with the server keys');
 console.log('proxy ok');

@@ -93,6 +93,14 @@ class Auth extends ChangeNotifier {
     return (email: '$local@$domain', error: null);
   }
 
+  /// Language of the emails Firebase sends (confirmation, password reset).
+  String languageCode = 'ar';
+  Future<void> _mailLanguage() async {
+    try {
+      await FirebaseAuth.instance.setLanguageCode(languageCode);
+    } catch (_) {}
+  }
+
   /// Creates the account and sends the confirmation link.
   Future<String?> emailSignUp(String rawEmail, String password) async {
     final c = canonicalEmail(rawEmail);
@@ -100,6 +108,7 @@ class Auth extends ChangeNotifier {
     if (password.length < 8) return 'weak-password';
     return _guard(() async {
       final cred = await FirebaseAuth.instance.createUserWithEmailAndPassword(email: c.email!, password: password);
+      await _mailLanguage();
       await cred.user?.sendEmailVerification();
       return null;
     });
@@ -114,10 +123,15 @@ class Auth extends ChangeNotifier {
   Future<String?> resetPassword(String rawEmail) async {
     final c = canonicalEmail(rawEmail);
     if (c.error != null) return c.error;
-    return _guard(() => FirebaseAuth.instance.sendPasswordResetEmail(email: c.email!));
+    return _guard(() async {
+      await _mailLanguage();
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: c.email!);
+      return null;
+    });
   }
 
   Future<String?> resendEmailCheck() => _guard(() async {
+        await _mailLanguage();
         await user?.sendEmailVerification();
         return null;
       });

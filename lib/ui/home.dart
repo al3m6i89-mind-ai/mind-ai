@@ -11,6 +11,7 @@ import '../core/models.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
+import '../core/voice.dart';
 import 'attachment_card.dart';
 import 'message_view.dart';
 import 'plans.dart';
@@ -28,6 +29,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   final _input = TextEditingController();
   final _scroll = ScrollController();
+  final voice = Voice();
   final _scaffold = GlobalKey<ScaffoldState>();
   int _lastCount = 0;
   int _lastLen = 0;
@@ -38,6 +40,10 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     _input.addListener(() => setState(() {}));
+    voice.addListener(() {
+      if (mounted) setState(() {});
+    });
+    voice.onLimit = finishVoice;
     final store = context.read<AppStore>();
     _updateTaps = store.updates.openRequests.stream.listen((_) async {
       if (!mounted) return;
@@ -51,6 +57,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _updateTaps?.cancel();
+    voice.dispose();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -117,6 +124,35 @@ class _HomeScreenState extends State<HomeScreen> {
       await context.read<AppStore>().addAttachment(name, bytes, s.t('newChat'));
     } on AttachRejected catch (e) {
       if (mounted) _toast(s.t(e.key, {'name': e.name}), error: true);
+    }
+  }
+
+  /// Microphone: records a spoken question.
+  Future<void> startVoice() async {
+    HapticFeedback.mediumImpact();
+    try {
+      await voice.start();
+    } on VoiceError catch (e) {
+      if (mounted) _toast(s.t('voice_${e.code}'), error: true);
+    } catch (e) {
+      debugPrint('voice start: $e');
+      if (mounted) _toast(s.t('voice_failed'), error: true);
+    }
+  }
+
+  /// Done: turns the recording into text in the message box, to check before sending.
+  Future<void> finishVoice() async {
+    if (!voice.recording) return;
+    HapticFeedback.lightImpact();
+    final store = context.read<AppStore>();
+    try {
+      final text = await voice.finish(await store.aiSession(kind: 'voice'));
+      if (!mounted) return;
+      final before = _input.text.trim();
+      _input.text = before.isEmpty ? text : '$before $text';
+      _input.selection = TextSelection.collapsed(offset: _input.text.length);
+    } on VoiceError catch (e) {
+      if (mounted) _toast(s.t('voice_${e.code}'), error: true);
     }
   }
 
@@ -262,6 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         itemCount: conv.messages.length,
                         itemBuilder: (_, i) => MessageView(
                           message: conv.messages[i],
+                          question: i > 0 && conv.messages[i - 1].role == Role.user ? conv.messages[i - 1].text : null,
                           s: s,
                           isLast: i == conv.messages.length - 1,
                           onRetry: () async {
@@ -486,6 +523,9 @@ class _Composer extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final canSend = store.streaming ||
         (store.processing == 0 && (home._input.text.trim().isNotEmpty || store.pending.isNotEmpty));
+    final voice = home.voice;
+    // Nothing to send: the round button is the microphone instead.
+    final mic = !canSend && !voice.busy;
     return Container(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 10),
       child: Column(
@@ -552,6 +592,9 @@ class _Composer extends StatelessWidget {
                     contentPadding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
                   ),
                 ),
+                if (voice.busy)
+                  _VoiceBar(voice: voice, s: s, onCancel: voice.cancel, onDone: home.finishVoice)
+                else
                 Row(
                   children: [
                     _ToolButton(icon: Icons.attach_file_rounded, label: s.t('attachFile'), onTap: home.pickFiles),
@@ -564,23 +607,27 @@ class _Composer extends StatelessWidget {
                       height: 42,
                       decoration: BoxDecoration(
                         shape: BoxShape.circle,
-                        color: canSend ? scheme.primary : context.surface2,
+                        color: canSend || mic ? scheme.primary : context.surface2,
                       ),
                       child: Material(
                         type: MaterialType.transparency,
                         shape: const CircleBorder(),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
-                          onTap: canSend ? home._send : null,
+                          onTap: canSend ? home._send : (mic ? home.startVoice : null),
                           child: AnimatedSwitcher(
                             duration: const Duration(milliseconds: 180),
                             transitionBuilder: (c, a) => ScaleTransition(scale: a, child: c),
                             child: Icon(
-                              store.streaming ? Icons.stop_rounded : Icons.arrow_upward_rounded,
-                              key: ValueKey(store.streaming),
+                              store.streaming
+                                  ? Icons.stop_rounded
+                                  : mic
+                                      ? Icons.mic_rounded
+                                      : Icons.arrow_upward_rounded,
+                              key: ValueKey('${store.streaming}$mic'),
                               size: 22,
-                              color: canSend ? scheme.onPrimary : context.muted,
-                              semanticLabel: store.streaming ? s.t('stop') : s.t('send'),
+                              color: canSend || mic ? scheme.onPrimary : context.muted,
+                              semanticLabel: store.streaming ? s.t('stop') : (mic ? s.t('voice') : s.t('send')),
                             ),
                           ),
                         ),
@@ -595,6 +642,83 @@ class _Composer extends StatelessWidget {
       ),
     );
   }
+}
+
+/// Shown in place of the attach buttons while recording or turning speech into text.
+class _VoiceBar extends StatelessWidget {
+  const _VoiceBar({required this.voice, required this.s, required this.onCancel, required this.onDone});
+  final Voice voice;
+  final S s;
+  final VoidCallback onCancel;
+  final VoidCallback onDone;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    if (voice.transcribing) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+        child: Row(children: [
+          const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
+          const SizedBox(width: 10),
+          Expanded(child: Text(s.t('voiceTranscribing'), style: TextStyle(color: context.muted))),
+        ]),
+      );
+    }
+    return Row(children: [
+      IconButton(
+        tooltip: s.t('cancel'),
+        icon: Icon(Icons.close_rounded, color: context.muted),
+        onPressed: onCancel,
+      ),
+      const _RecDot(),
+      const SizedBox(width: 8),
+      Expanded(
+        child: StreamBuilder<void>(
+          stream: Stream<void>.periodic(const Duration(seconds: 1)),
+          builder: (context, _) {
+            final d = DateTime.now().difference(voice.startedAt ?? DateTime.now());
+            final mm = d.inMinutes.toString().padLeft(2, '0');
+            final ss = (d.inSeconds % 60).toString().padLeft(2, '0');
+            return Text('${s.t('voiceListening')}  $mm:$ss',
+                maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: context.muted, fontSize: 13.5));
+          },
+        ),
+      ),
+      FilledButton.icon(
+        style: FilledButton.styleFrom(
+          visualDensity: VisualDensity.compact,
+          backgroundColor: scheme.primary,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+        ),
+        icon: const Icon(Icons.check_rounded, size: 18),
+        label: Text(s.t('voiceDone')),
+        onPressed: onDone,
+      ),
+      const SizedBox(width: 4),
+    ]);
+  }
+}
+
+class _RecDot extends StatefulWidget {
+  const _RecDot();
+  @override
+  State<_RecDot> createState() => _RecDotState();
+}
+
+class _RecDotState extends State<_RecDot> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 900))..repeat(reverse: true);
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => FadeTransition(
+        opacity: Tween<double>(begin: 0.35, end: 1).animate(_c),
+        child: Container(width: 10, height: 10, decoration: BoxDecoration(color: context.danger, shape: BoxShape.circle)),
+      );
 }
 
 class _ToolButton extends StatelessWidget {
@@ -698,6 +822,7 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
       final active = c.id == store.currentId;
       final picked = _sel.contains(c.id);
       final files = c.attachments.length;
+      final snippet = _q.trim().isEmpty ? null : c.snippet(_q);
       rows.add(Padding(
         padding: const EdgeInsets.only(bottom: 2),
         child: ListTile(
@@ -715,9 +840,12 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
           contentPadding: const EdgeInsetsDirectional.only(start: 12, end: 0),
           title: Text(c.title, maxLines: 1, overflow: TextOverflow.ellipsis,
               style: TextStyle(fontWeight: active ? FontWeight.w600 : FontWeight.w500, fontSize: 14)),
-          subtitle: files == 0
-              ? null
-              : Text(s.filesCount(files), style: TextStyle(fontSize: 11.5, color: context.muted)),
+          subtitle: snippet != null
+              ? Text(snippet, maxLines: 2, overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 12, color: context.muted, height: 1.35))
+              : files == 0
+                  ? null
+                  : Text(s.filesCount(files), style: TextStyle(fontSize: 11.5, color: context.muted)),
           onTap: () {
             if (_selecting) return _toggle(c.id);
             store.select(c.id);

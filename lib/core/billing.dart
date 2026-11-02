@@ -9,11 +9,13 @@ import 'plan.dart';
 enum BillingResult { started, notAvailable, notPublished, error, restored, nothingToRestore }
 
 /// Google Play subscription. The app only unlocks the paid plan for a purchase
-/// Google Play reports as active; nothing is unlocked locally.
+/// Google Play reports as active, and the proxy checks that purchase with
+/// Google again (by its token) before it allows the paid limits.
 class Billing {
   Billing(this.onPremiumChanged);
 
-  final void Function(bool premium) onPremiumChanged;
+  /// [token] is the Play purchase token of the active subscription, if any.
+  final Future<void> Function(bool premium, String? token) onPremiumChanged;
   // Touched only inside try blocks: it talks to the Play Store as soon as it is created.
   late final _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _sub;
@@ -38,8 +40,9 @@ class Billing {
       final android = _iap.getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
       final res = await android.queryPastPurchases();
       if (res.error != null) return null;
-      final active = res.pastPurchases.any((p) => p.productID == Plan.productId && p.status != PurchaseStatus.error);
-      onPremiumChanged(active);
+      final mine = res.pastPurchases.where((p) => p.productID == Plan.productId && p.status != PurchaseStatus.error);
+      final active = mine.isNotEmpty;
+      await onPremiumChanged(active, active ? mine.first.verificationData.serverVerificationData : null);
       for (final p in res.pastPurchases) {
         if (p.pendingCompletePurchase) await _iap.completePurchase(p);
       }
@@ -74,7 +77,9 @@ class Billing {
   Future<void> _onPurchases(List<PurchaseDetails> list) async {
     for (final p in list) {
       if (p.productID != Plan.productId) continue;
-      if (p.status == PurchaseStatus.purchased || p.status == PurchaseStatus.restored) onPremiumChanged(true);
+      if (p.status == PurchaseStatus.purchased || p.status == PurchaseStatus.restored) {
+        await onPremiumChanged(true, p.verificationData.serverVerificationData);
+      }
       if (p.pendingCompletePurchase) await _iap.completePurchase(p);
     }
   }

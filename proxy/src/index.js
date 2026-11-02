@@ -1,3 +1,5 @@
+import { PAGES } from './pages.js';
+
 // File Chat proxy: keeps the AI services' keys on the server and forwards the
 // app's requests, adding a key. Bodies are streamed through, not parsed, so
 // large files and long answers cost almost no CPU.
@@ -7,6 +9,9 @@
 //   GEMINI_KEYS       one or more Google AI Studio keys, comma-separated
 //   GROQ_KEYS, MISTRAL_KEYS, OPENROUTER_KEYS, CEREBRAS_KEYS   optional, comma-separated
 //   POLLINATIONS_TOKEN                                         optional
+//   PLAY_SERVICE_ACCOUNT  optional: JSON key of a Google Cloud service account that
+//                     has access to the app in Play Console. Without it nobody gets
+//                     the paid plan's limits, because a purchase cannot be checked.
 // Vars (wrangler.toml):
 //   FIREBASE_PROJECT  when set, every AI request needs a signed-in user's Firebase
 //                     ID token (x-user-token) and counts against the daily quota
@@ -54,9 +59,12 @@ const refuse = (status, why, extra = {}) =>
   new Response(why, { status, headers: { 'x-proxy-error': why, ...extra } });
 
 export const LIMITS = {
-  ask: { free: 20, premium: 300 }, // premium is the app's claim until Play purchases are verified here
+  ask: { free: 20, premium: 300 }, // premium only for a subscription checked with Google Play (see /purchase)
   help: { free: 40, premium: 40 },
+  voice: { free: 30, premium: 300 }, // spoken questions turned into text
 };
+export const PACKAGE = 'com.zuhair.file_chat';
+export const PRODUCT = 'file_chat_premium_monthly';
 const QUESTION_WINDOW_MS = 30 * 60 * 1000; // one question id stays usable this long
 const QUESTION_MAX_REQUESTS = 150; // and for this many requests (uploads poll while files process)
 
@@ -69,10 +77,13 @@ const ALLOWED = {
     /^v1beta\/files\/[a-z0-9\-]+$/,
   ],
   openai: [/^v1\/chat\/completions$/, /^v1\/models$/],
+  // Speech to text, on Groq only.
+  q: [/^v1\/audio\/transcriptions$/],
 };
 const allowedPath = (id, path, method) => {
   if (id === 'g') return ALLOWED.g.some((r) => r.test(path)) && (method === 'POST' || /^v1beta\/files\//.test(path));
   if (path === 'v1/models') return method === 'GET';
+  if (id === 'q' && ALLOWED.q.some((r) => r.test(path))) return method === 'POST';
   return ALLOWED.openai.some((r) => r.test(path)) && method === 'POST';
 };
 
@@ -151,14 +162,53 @@ export function quotaStatus(sql, { uid, device, kind, limit, now = Date.now() })
   return { left: r.left, limit };
 }
 
+// ---------- Subscriptions (checked with Google Play, kept with the quota) ----------
+const subsTable = (sql) =>
+  sql.exec(`CREATE TABLE IF NOT EXISTS subs (token TEXT PRIMARY KEY, uid TEXT, expiry INTEGER, checked INTEGER)`);
+
+/** Until when [uid] has the paid plan (ms), or 0. */
+export function premiumUntil(sql, uid, now = Date.now()) {
+  subsTable(sql);
+  const r = sql.exec('SELECT MAX(expiry) AS e FROM subs WHERE uid = ? AND expiry > ?', uid, now).one();
+  return r.e || 0;
+}
+
+/** Records a purchase Google confirmed. One subscription belongs to the first account that sent it. */
+export function saveSub(sql, { token, uid, expiry, now = Date.now() }) {
+  subsTable(sql);
+  const row = sql.exec('SELECT uid, expiry FROM subs WHERE token = ?', token).toArray()[0];
+  if (row && row.uid !== uid && row.expiry > now) return { ok: false, why: 'other-account' };
+  sql.exec('INSERT OR REPLACE INTO subs (token, uid, expiry, checked) VALUES (?, ?, ?, ?)', token, uid, expiry, now);
+  return { ok: true, until: premiumUntil(sql, uid, now) };
+}
+
+/** Removes the account's subscription records. Question counts are kept until
+ * they expire (3 days), or deleting would hand out new free questions. */
+export function forget(sql, uid) {
+  subsTable(sql);
+  sql.exec('DELETE FROM subs WHERE uid = ?', uid);
+  return { ok: true };
+}
+
+/** Quota with the limit of the account's plan. */
+export function planned(sql, body, now = Date.now()) {
+  const until = premiumUntil(sql, body.uid, now);
+  const plan = until > now ? 'premium' : 'free';
+  const limit = LIMITS[body.kind][plan];
+  const args = { ...body, limit, now };
+  const r = body.op === 'status' ? quotaStatus(sql, args) : quotaCheck(sql, args);
+  return { ...r, limit, plan, until };
+}
+
 export class Quota {
   constructor(ctx) {
     this.sql = ctx.storage.sql;
   }
   async fetch(request) {
     const body = await request.json();
-    const out = body.op === 'status' ? quotaStatus(this.sql, body) : quotaCheck(this.sql, body);
-    return Response.json(out);
+    if (body.op === 'save-sub') return Response.json(saveSub(this.sql, body));
+    if (body.op === 'forget') return Response.json(forget(this.sql, body.uid));
+    return Response.json(planned(this.sql, body));
   }
 }
 
@@ -169,33 +219,132 @@ async function quota(env, body) {
 }
 
 /** Signed-in user and quota for an AI request. Returns a refusal Response, or the headers to add. */
-async function admit(request, env, kindOverride) {
+const kindOf = (request) => {
+  const k = request.headers.get('x-kind');
+  return k === 'help' || k === 'voice' ? k : 'ask';
+};
+
+const ciCall = (request, env) => env.GEMINI_KEYS && request.headers.get('x-ci') === env.GEMINI_KEYS;
+const signedIn = (request, env) => verifyIdToken(request.headers.get('x-user-token') || '', env.FIREBASE_PROJECT);
+
+/** Signed-in user and quota for an AI request. Returns a refusal Response, or the headers to add. */
+async function admit(request, env, statusOnly = false) {
   if (!env.FIREBASE_PROJECT) return { headers: {} };
   // The deploy check in CI proves it holds the server's keys instead of signing in.
-  if (env.GEMINI_KEYS && request.headers.get('x-ci') === env.GEMINI_KEYS) return { headers: {} };
-  const claims = await verifyIdToken(request.headers.get('x-user-token') || '', env.FIREBASE_PROJECT);
+  if (ciCall(request, env)) return { headers: {} };
+  const claims = await signedIn(request, env);
   if (!claims) return { refuse: refuse(401, 'auth') };
-  const kind = kindOverride || (request.headers.get('x-kind') === 'help' ? 'help' : 'ask');
-  const plan = request.headers.get('x-plan') === 'premium' ? 'premium' : 'free';
-  const limit = LIMITS[kind][plan];
+  const kind = kindOf(request);
   const device = (request.headers.get('x-device-id') || '').slice(0, 64);
   const qid = (request.headers.get('x-question-id') || '').slice(0, 64);
-  const r = await quota(env, { op: kindOverride ? 'status' : 'check', uid: claims.sub, device, qid, kind, limit });
-  const headers = { 'x-quota-left': String(r.left), 'x-quota-limit': String(limit) };
-  if (!kindOverride && !r.ok) return { refuse: refuse(429, r.why, headers) };
+  const r = await quota(env, { op: statusOnly ? 'status' : 'check', uid: claims.sub, device, qid, kind });
+  const headers = {
+    'x-quota-left': String(r.left),
+    'x-quota-limit': String(r.limit),
+    'x-plan': r.plan,
+    'x-premium-until': String(r.until || 0),
+  };
+  if (!statusOnly && !r.ok) return { refuse: refuse(429, r.why, headers) };
   return { headers };
+}
+
+// ---------- Google Play (service account → OAuth token → Play Developer API) ----------
+const b64urlOf = (bytes) => btoa(String.fromCharCode(...new Uint8Array(bytes))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+let playToken = { value: null, until: 0 };
+
+async function playAccessToken(env, now = Date.now()) {
+  if (playToken.value && now < playToken.until) return playToken.value;
+  const sa = JSON.parse(env.PLAY_SERVICE_ACCOUNT);
+  const sec = Math.floor(now / 1000);
+  const enc = (o) => b64urlOf(new TextEncoder().encode(JSON.stringify(o)));
+  const unsigned = enc({ alg: 'RS256', typ: 'JWT' }) + '.' + enc({
+    iss: sa.client_email,
+    scope: 'https://www.googleapis.com/auth/androidpublisher',
+    aud: 'https://oauth2.googleapis.com/token',
+    iat: sec,
+    exp: sec + 3600,
+  });
+  const pem = sa.private_key.replace(/-----[^-]+-----/g, '').replace(/\s/g, '');
+  const key = await crypto.subtle.importKey('pkcs8', Uint8Array.from(atob(pem), (c) => c.charCodeAt(0)),
+    { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['sign']);
+  const sig = await crypto.subtle.sign('RSASSA-PKCS1-v1_5', key, new TextEncoder().encode(unsigned));
+  const res = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
+    body: `grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Ajwt-bearer&assertion=${unsigned}.${b64urlOf(sig)}`,
+  });
+  if (!res.ok) throw new Error('oauth ' + res.status);
+  const j = await res.json();
+  playToken = { value: j.access_token, until: now + (j.expires_in - 120) * 1000 };
+  return playToken.value;
+}
+
+/** Until when (ms) a Play subscription purchase gives the paid plan; 0 if it does not. */
+export function subscriptionUntil(sub, now = Date.now()) {
+  const states = ['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED'];
+  if (!sub || !states.includes(sub.subscriptionState)) return 0;
+  const item = (sub.lineItems || []).find((l) => l.productId === PRODUCT);
+  const until = item ? Date.parse(item.expiryTime) : 0;
+  return until > now ? until : 0;
+}
+
+async function checkPurchase(request, env) {
+  if (!env.FIREBASE_PROJECT) return refuse(501, 'unconfigured');
+  const claims = await signedIn(request, env);
+  if (!claims) return refuse(401, 'auth');
+  if (!env.PLAY_SERVICE_ACCOUNT) return refuse(503, 'unconfigured');
+  let body;
+  try {
+    body = await request.json();
+  } catch {
+    return refuse(400, 'body');
+  }
+  const token = String(body.purchaseToken || '');
+  if (!/^[A-Za-z0-9._\-]{10,1000}$/.test(token)) return refuse(400, 'body');
+  const access = await playAccessToken(env);
+  const res = await fetch(`https://androidpublisher.googleapis.com/androidpublisher/v3/applications/${PACKAGE}/purchases/subscriptionsv2/tokens/${token}`,
+    { headers: { authorization: `Bearer ${access}` } });
+  if (res.status === 404 || res.status === 410 || res.status === 400) return Response.json({ premium: false, until: 0 });
+  if (!res.ok) return refuse(502, 'play');
+  const until = subscriptionUntil(await res.json());
+  if (!until) return Response.json({ premium: false, until: 0 });
+  const r = await quota(env, { op: 'save-sub', token, uid: claims.sub, expiry: until });
+  if (!r.ok) return Response.json({ premium: false, until: 0, why: r.why });
+  return Response.json({ premium: true, until: r.until });
+}
+
+async function forgetAccount(request, env) {
+  if (!env.FIREBASE_PROJECT) return Response.json({ ok: true });
+  const claims = await signedIn(request, env);
+  if (!claims) return refuse(401, 'auth');
+  return Response.json(await quota(env, { op: 'forget', uid: claims.sub }));
 }
 
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
+    // Public pages that Google Play and sign-in providers link to.
+    if (request.method === 'GET' && PAGES[url.pathname]) {
+      return new Response(PAGES[url.pathname], {
+        headers: { 'content-type': 'text/html; charset=utf-8', 'cache-control': 'public, max-age=3600' },
+      });
+    }
     if (!env.APP_TOKEN || request.headers.get('x-app-token') !== env.APP_TOKEN) return refuse(401, 'token');
 
     if (url.pathname === '/quota') {
-      const a = await admit(request, env, request.headers.get('x-kind') === 'help' ? 'help' : 'ask');
+      const a = await admit(request, env, true);
       if (a.refuse) return a.refuse;
-      return Response.json({ left: Number(a.headers['x-quota-left'] ?? -1), limit: Number(a.headers['x-quota-limit'] ?? -1) }, { headers: { 'cache-control': 'no-store' } });
+      const h = a.headers;
+      return Response.json({
+        left: Number(h['x-quota-left'] ?? -1),
+        limit: Number(h['x-quota-limit'] ?? -1),
+        plan: h['x-plan'] || 'free',
+        until: Number(h['x-premium-until'] || 0),
+        verify: Boolean(env.PLAY_SERVICE_ACCOUNT),
+      }, { headers: { 'cache-control': 'no-store' } });
     }
+    if (url.pathname === '/purchase' && request.method === 'POST') return checkPurchase(request, env);
+    if (url.pathname === '/account' && request.method === 'DELETE') return forgetAccount(request, env);
 
     if (url.pathname === '/config') {
       const chain = CHAIN.filter((c) => PROVIDERS[c.p].optional || keysOf(env, PROVIDERS[c.p].keys).length);

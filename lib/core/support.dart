@@ -6,6 +6,11 @@ class Support {
 
   /// International format without "+" or spaces, for wa.me links.
   static const whatsapp = String.fromEnvironment('SUPPORT_WHATSAPP', defaultValue: '96897133135');
+
+  /// Public pages served by the proxy (also given to Google Play).
+  static const site = 'https://file-chat-proxy.5azuy2.workers.dev';
+  static const privacyUrl = '$site/privacy';
+  static const deleteUrl = '$site/delete';
 }
 
 /// Instructions for the help bot: everything it may say about the app.
@@ -20,22 +25,23 @@ What the app does:
 How to use:
 - Start a new chat with the pencil icon at the top or "New chat" in the side menu.
 - Attach with the paperclip (+) button: "File" for documents from the file manager, "Image" for the gallery. Then type the question and send.
-- Old chats are in the side menu (top corner icon). Search them with the search box. Tap ••• on a chat to rename or delete it.
+- Ask by voice: when the message box is empty, tap the microphone, speak, then tap "Done". The words appear in the box to check or edit before sending (up to 2 minutes per recording; the phone asks once for microphone permission).
+- Old chats are in the side menu (top corner icon). The search box finds words inside the chats' titles, questions, answers and file names, and shows the matching line. Tap ••• on a chat to rename or delete it.
 - Long-press a chat to select it; then use "Select all" and the delete button to delete several chats at once.
 - A file attached to a chat stays with it; delete a file from its card in the chat.
-- Answers can be copied with the copy button under them. A stopped or failed answer can be retried.
+- Under each answer: copy, share (sends the question and answer to WhatsApp or any app), and retry for a stopped or failed answer.
 
 Plans:
 - Free: ${Plan.freeDailyQuestions} questions per day (resets at midnight), files up to ${Plan.freeMaxFileBytes ~/ (1024 * 1024)} MB, and the ad blocker on the phone must be turned off for the app to work.
-- Premium: \$4.99 per month through Google Play: unlimited questions, files up to ${Plan.premiumMaxFileBytes ~/ (1024 * 1024)} MB, no need to turn off the ad blocker, answers keep coming when the service is busy. Subscribe from "Subscribe" in the side menu or Settings → Subscription. Cancel or manage it in Google Play → Payments & subscriptions. "Restore subscription" on the plans page brings back a subscription after reinstalling.
+- Premium: \$4.99 per month through Google Play: up to 300 questions per day, files up to ${Plan.premiumMaxFileBytes ~/ (1024 * 1024)} MB, no need to turn off the ad blocker, answers keep coming when the service is busy. Subscribe from "Subscribe" in the side menu or Settings → Subscription. Cancel or manage it in Google Play → Payments & subscriptions. "Restore subscription" on the plans page brings back a subscription after reinstalling.
 
 Ad blocker message: on the free plan the app asks to turn off ad blockers. To turn off: Settings → Network & internet → Private DNS → Automatic or Off; and pause apps like AdGuard, Blokada or ad-blocking VPNs. Then tap "I turned it off, check again".
 
-Account: sign in with Google or a phone number (SMS code). Account details and the plan are on the Account page (tap your name at the bottom of the side menu, or Settings → Account). Sign out from the Account page. Chats stay on the phone after signing out.
+Account: sign in with Google or with email and password (Gmail, Hotmail, Outlook, Yahoo or iCloud addresses; a confirmation link is sent to the email, check the spam folder if it doesn't arrive). Account details and the plan are in Settings → Account. Sign out or delete the account from there. Chats stay on the phone after signing out.
 
 Updates: the app checks for new versions and shows a notification; Settings → Updates → "Check for updates". Tap "Update now" to download and install from inside the app (Android may ask once to allow installing updates from this app).
 
 Settings: theme (automatic, light, dark), language (Arabic, English), account, subscription, updates. The version number is at the bottom of Settings.
 
-Privacy: chats and files are stored on the phone only. When a question is asked, the files are sent securely to the AI service to read and answer; they are not shared with anyone else.
+Privacy: chats and files are stored on the phone only. When a question is asked, the files are sent securely to the AI service to read and answer; they are not shared with anyone else. The full privacy policy is in Settings → About → Privacy policy (${Support.privacyUrl}).
 ''';

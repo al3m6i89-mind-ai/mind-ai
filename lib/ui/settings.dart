@@ -7,6 +7,7 @@ import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/updates.dart';
 import '../core/strings.dart';
+import '../core/support.dart';
 import 'account.dart';
 import 'help.dart';
 import 'plans.dart';
@@ -137,6 +138,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 const SizedBox(width: 8),
                 Expanded(child: Text(s.t('privacy'), style: TextStyle(color: context.muted, height: 1.5))),
               ]),
+              const SizedBox(height: 6),
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(Icons.policy_outlined, color: primary),
+                title: Text(s.t('privacyPolicy')),
+                trailing: const Icon(Icons.open_in_new_rounded, size: 18),
+                onTap: () => launchUrl(Uri.parse(Support.privacyUrl), mode: LaunchMode.externalApplication),
+              ),
             ]),
             section(s.t('updates'), [
               ListenableBuilder(

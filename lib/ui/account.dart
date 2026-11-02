@@ -196,7 +196,7 @@ class AccountScreen extends StatelessWidget {
                       ),
                     );
                     if (ok != true) return;
-                    final err = await store.auth.deleteAccount();
+                    final err = await store.deleteAccount();
                     if (!context.mounted) return;
                     if (err == null) {
                       Navigator.popUntil(context, (r) => r.isFirst);

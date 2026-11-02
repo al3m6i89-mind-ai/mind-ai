@@ -62,6 +62,7 @@ class AppStore extends ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final root = Directory('${(await getApplicationDocumentsDirectory()).path}/file_chat');
     final store = AppStore(prefs, root, auth: await Auth.start());
+    store.auth.languageCode = store.lang;
     await store._load();
     unawaited(store.billing.start());
     return store;
@@ -70,12 +71,42 @@ class AppStore extends ChangeNotifier {
   // ---------- plan ----------
   late final billing = Billing(_setPremium);
 
-  /// Set only from what Google Play reports (see [Billing]).
+  /// Set from what Google Play reports (see [Billing]) and what the proxy
+  /// confirmed with Google; the proxy alone decides the paid limits.
   bool get premium => _prefs.getBool('premium') ?? false;
-  void _setPremium(bool v) {
+  void _markPremium(bool v) {
     if (v == premium) return;
     _prefs.setBool('premium', v);
     notifyListeners();
+  }
+
+  Future<void> _setPremium(bool active, String? token) async {
+    if (!active || token == null || token.isEmpty) return _markPremium(active);
+    final verified = await verifyPurchase(token);
+    // Unknown (offline, or checks not set up on the server yet): show what Play says.
+    _markPremium(verified ?? true);
+  }
+
+  /// Sends a Play purchase token to the proxy, which checks it with Google.
+  /// Returns null when it could not be checked.
+  Future<bool?> verifyPurchase(String token) async {
+    if (!auth.available || auth.user == null) return null;
+    try {
+      final p = Proxy.build;
+      if (p.base.isEmpty) return null;
+      final session = await aiSession()
+        ..remove('x-question-id');
+      final res = await http
+          .post(Uri.parse('${p.base}/purchase'),
+              headers: {'x-app-token': p.token, 'content-type': 'application/json', ...session},
+              body: jsonEncode({'purchaseToken': token}))
+          .timeout(const Duration(seconds: 20));
+      if (res.statusCode != 200) return null;
+      return (jsonDecode(res.body) as Map<String, dynamic>)['premium'] == true;
+    } catch (e) {
+      debugPrint('purchase check: $e');
+      return null;
+    }
   }
 
   int get maxFileBytes => premium ? Plan.premiumMaxFileBytes : Plan.freeMaxFileBytes;
@@ -113,13 +144,39 @@ class AppStore extends ChangeNotifier {
       if (_deviceId != null && _deviceId!.isNotEmpty) 'x-device-id': _deviceId!,
       'x-question-id': questionId ?? _uuid.v4(),
       'x-kind': kind,
-      'x-plan': premium ? 'premium' : 'free',
     };
   }
 
-  /// Asks the proxy how many free questions are left today.
+  /// Deletes the Firebase account, then the subscription record the proxy keeps
+  /// for it (with the token taken before, which stays valid for up to an hour).
+  Future<String?> deleteAccount() async {
+    Map<String, String>? session;
+    try {
+      session = await aiSession()
+        ..remove('x-question-id');
+    } catch (_) {}
+    final err = await auth.deleteAccount();
+    if (err != null) return err;
+    _markPremium(false);
+    try {
+      final p = Proxy.build;
+      if (p.base.isNotEmpty && session != null) {
+        await http
+            .delete(Uri.parse('${p.base}/account'), headers: {'x-app-token': p.token, ...session})
+            .timeout(const Duration(seconds: 15));
+      }
+    } catch (e) {
+      debugPrint('account forget: $e');
+    }
+    return null;
+  }
+
+  bool _rechecked = false;
+
+  /// Asks the proxy how many free questions are left today, and which plan it
+  /// gives this account.
   Future<void> syncQuota() async {
-    if (!auth.available || auth.user == null || premium) return;
+    if (!auth.available || auth.user == null) return;
     try {
       final p = Proxy.build;
       if (p.base.isEmpty) return;
@@ -129,8 +186,18 @@ class AppStore extends ChangeNotifier {
           .get(Uri.parse('${p.base}/quota'), headers: {'x-app-token': p.token, ...session})
           .timeout(const Duration(seconds: 15));
       if (res.statusCode == 200) {
-        final left = (jsonDecode(res.body) as Map<String, dynamic>)['left'];
-        if (left is num && left >= 0) _serverLeft(left.toInt());
+        final j = jsonDecode(res.body) as Map<String, dynamic>;
+        if (j['plan'] == 'premium') {
+          _markPremium(true);
+        } else if (premium && j['verify'] == true && !_rechecked) {
+          // The server has no record (new account, or the month renewed): send Play's token again.
+          _rechecked = true;
+          await billing.refresh();
+        } else if (j['verify'] == true && _rechecked) {
+          _markPremium(false);
+        }
+        final left = j['left'];
+        if (!premium && left is num && left >= 0) _serverLeft(left.toInt());
       }
     } catch (e) {
       debugPrint('quota sync: $e');
@@ -153,6 +220,7 @@ class AppStore extends ChangeNotifier {
   String get lang => _prefs.getString('lang') ?? 'ar';
   Future<void> setLang(String v) async {
     await _prefs.setString('lang', v);
+    auth.languageCode = v;
     notifyListeners();
   }
 

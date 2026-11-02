@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:file_chat/core/strings.dart';
 import 'package:file_chat/core/auth.dart';
 import 'package:file_chat/core/models.dart';
 import 'package:file_chat/core/plan.dart';
@@ -160,6 +161,17 @@ void main() {
     expect(find.text('المتابعة بحساب Google'), findsOneWidget);
     expect(find.text('الإصدار 1.4.3 (21)'), findsOneWidget);
     expect(find.text('إرسال رمز التحقق'), findsNothing); // phone sign-in is off until billing is on
+  });
+
+  testWidgets('an empty message box offers the microphone; typing turns it into send', (t) async {
+    await pump(t);
+    expect(find.byIcon(Icons.mic_rounded), findsOneWidget);
+    final box = find.byWidgetPredicate((w) => w is TextField && w.decoration?.hintText == S('ar').t('placeholder'));
+    expect(box, findsOneWidget);
+    await t.enterText(box, 'سؤال');
+    await t.pumpAndSettle();
+    expect(find.byIcon(Icons.mic_rounded), findsNothing);
+    expect(find.byIcon(Icons.arrow_upward_rounded), findsOneWidget);
   });
 
   testWidgets('attached file shows as a pending card', (t) async {

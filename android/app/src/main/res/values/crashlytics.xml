@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crashlytics normally gets these from its Gradle plugin; the app sets up
+     Firebase from Dart, so they are given here. Reports still arrive without a
+     mapping file (Dart errors are not obfuscated). -->
+<resources xmlns:tools="http://schemas.android.com/tools" tools:ignore="UnusedResources">
+    <string name="com.google.firebase.crashlytics.mapping_file_id" translatable="false">98bf5da35be84c83b12c04a59cc229e9</string>
+    <string name="com.crashlytics.android.build_id" translatable="false">09a953770c6147e8a7d03e516687c1a4</string>
+    <bool name="com.crashlytics.RequireBuildId">false</bool>
+</resources>

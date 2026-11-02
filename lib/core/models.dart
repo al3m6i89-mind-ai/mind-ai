@@ -164,11 +164,46 @@ class Conversation {
 
   Iterable<Attachment> get attachments => messages.expand((m) => m.attachments);
 
+  /// Search form of a text: lower case, without Arabic diacritics or tatweel,
+  /// and with the letter variants people mix up (أ إ آ ا, ة ه, ى ي) made one.
+  static String fold(String t) => t
+      .toLowerCase()
+      .replaceAll(RegExp('[\u064B-\u065F\u0670\u0640]'), '')
+      .replaceAll(RegExp('[أإآٱ]'), 'ا')
+      .replaceAll('ة', 'ه')
+      .replaceAll('ى', 'ي')
+      .replaceAll('ؤ', 'و')
+      .replaceAll('ئ', 'ي');
+
   bool matches(String q) {
-    final s = q.toLowerCase();
-    return title.toLowerCase().contains(s) ||
-        messages.any((m) => m.text.toLowerCase().contains(s)) ||
-        attachments.any((a) => a.name.toLowerCase().contains(s));
+    final s = fold(q.trim());
+    if (s.isEmpty) return true;
+    return fold(title).contains(s) ||
+        messages.any((m) => fold(m.text).contains(s)) ||
+        attachments.any((a) => fold(a.name).contains(s));
+  }
+
+  /// A short piece of the first message containing [q], to show under the
+  /// chat in search results; null when only the title or a file name matched.
+  String? snippet(String q, {int around = 34}) {
+    final s = fold(q.trim());
+    if (s.isEmpty || fold(title).contains(s)) return null;
+    for (final m in messages) {
+      // Folding removes characters, so search line by line and show the whole line, trimmed.
+      for (final line in m.text.split('\n')) {
+        final f = fold(line);
+        final i = f.indexOf(s);
+        if (i < 0) continue;
+        final clean = line.replaceAll(RegExp(r'[#*_`>|]'), '').trim();
+        if (clean.length <= around * 2 + s.length) return clean;
+        final ratio = clean.length / (f.isEmpty ? 1 : f.length);
+        final at = (i * ratio).round().clamp(0, clean.length);
+        final start = (at - around).clamp(0, clean.length);
+        final end = (at + s.length + around).clamp(0, clean.length);
+        return '${start > 0 ? '…' : ''}${clean.substring(start, end).trim()}${end < clean.length ? '…' : ''}';
+      }
+    }
+    return null;
   }
 
   String encode() => jsonEncode({

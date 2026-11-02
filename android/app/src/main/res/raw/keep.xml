@@ -1,0 +1,4 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Crashlytics reads these by name at run time; keep them when resources are shrunk. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@string/com_google_firebase_crashlytics_mapping_file_id,@string/com_crashlytics_android_build_id,@bool/com_crashlytics_RequireBuildId" />
