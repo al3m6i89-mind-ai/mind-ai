@@ -83,6 +83,12 @@ jobs:
           code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
             -d '{"model":"openai","messages":[{"role":"user","content":"Reply with the single word OK"}]}' "$URL/p/v1/chat/completions")
           echo "pollinations: $code $(head -c 160 out.json)"
+          for m in $(jq -r '.chain[] | select(.backend=="openai" and .p!="p") | .p + "|" + .model' cfg.json); do
+            p=${m%%|*}; model=${m#*|}
+            code=$(curl -sS -o out.json -w "%{http_code}" -H "x-app-token: $APP_TOKEN" -H 'Content-Type: application/json' \
+              -d "{\"model\":\"$model\",\"messages\":[{\"role\":\"user\",\"content\":\"Reply with the single word OK\"}]}" "$URL/$p/v1/chat/completions")
+            echo "$p $model: $code $(jq -r '.choices[0].message.content // .error.message // .' out.json 2>/dev/null | head -c 120)"
+          done
           echo "wrong token: $(curl -s -o /dev/null -w '%{http_code}' "$URL/config" -H 'x-app-token: nope')"
 
   build:
