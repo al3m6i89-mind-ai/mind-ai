@@ -22,8 +22,9 @@ const PROVIDERS = {
 // changed here without updating the app. Services without keys are left out.
 // `vision`: the model reads images (Gemini always does).
 const CHAIN = [
-  { backend: 'gemini', model: 'gemini-flash-latest', p: 'g' },
+  // Lite answers in under a second; the full Flash model often stalls on the free tier.
   { backend: 'gemini', model: 'gemini-flash-lite-latest', p: 'g' },
+  { backend: 'gemini', model: 'gemini-flash-latest', p: 'g' },
   // Pro is not in Gemini's free tier; add it here once billing is on:
   // { backend: 'gemini', model: 'gemini-pro-latest', p: 'g' },
   { backend: 'openai', model: 'openai/gpt-oss-120b', p: 'q' },

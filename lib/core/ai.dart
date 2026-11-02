@@ -178,8 +178,8 @@ class AiClient {
 
   /// Used when the proxy's /config cannot be read. Mirrors proxy/src/index.js.
   static const defaultChain = [
-    Attempt(Backend.gemini, 'gemini-flash-latest', 'g'),
     Attempt(Backend.gemini, 'gemini-flash-lite-latest', 'g'),
+    Attempt(Backend.gemini, 'gemini-flash-latest', 'g'),
     Attempt(Backend.openai, 'openai/gpt-oss-120b', 'q'),
     Attempt(Backend.openai, 'openai/gpt-oss-20b', 'q'),
     Attempt(Backend.openai, 'mistral-medium-latest', 'm', vision: true),
