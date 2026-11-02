@@ -30,6 +30,19 @@ class AttachRejected implements Exception {
 
 /// All app state. Conversations live as one JSON file each in the app's private
 /// folder; attached files are copied next to them.
+void _extractWorker((SendPort, String, String) job) {
+  final (port, path, ext) = job;
+  var last = -1;
+  final result = extractText(ext, File(path).readAsBytesSync(), onProgress: (done, total) {
+    final pct = total == 0 ? 100 : done * 100 ~/ total;
+    if (pct != last) {
+      last = pct;
+      port.send([done, total]);
+    }
+  });
+  Isolate.exit(port, result);
+}
+
 class AppStore extends ChangeNotifier {
   AppStore(this._prefs, this._root, {Auth? auth, this.adBlockCheck = detectAdBlocker, Updater? updates})
       : auth = auth ?? Auth.disabled(),
@@ -350,38 +363,169 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------- attachments ----------
+  /// The file being added right now, for the progress ring under the composer.
+  String? loadName;
+
+  /// 0..1 while the file is copied and read; null while its size is unknown.
+  double? loadProgress;
+
+  /// 'prepare' (the phone hands the file over), 'copy', or 'read' (pages).
+  String loadStage = '';
+
+  /// Bytes handed over so far while preparing, and pages read so far.
+  int loadBytes = 0, loadDone = 0, loadTotal = 0;
+
+  int _shownPercent = -1;
+  void _progress(String stage, double? p, {int done = 0, int total = 0}) {
+    final pct = p == null ? -1 : (p * 100).floor();
+    if (stage == loadStage && pct == _shownPercent && p != null) return;
+    loadStage = stage;
+    loadProgress = p;
+    loadDone = done;
+    loadTotal = total;
+    _shownPercent = pct;
+    notifyListeners();
+  }
+
+  /// The phone's file manager is handing a picked file over (it copies it first).
+  void preparing(bool on, {int bytes = 0}) {
+    if (on) {
+      loadName ??= '';
+      loadStage = 'prepare';
+      loadProgress = null;
+      loadBytes = bytes;
+    } else if (loadStage == 'prepare') {
+      loadName = null;
+      loadStage = '';
+      loadBytes = 0;
+    }
+    notifyListeners();
+  }
+
   /// Validates, copies and reads one picked file. Throws [AttachRejected].
-  Future<void> addAttachment(String name, Uint8List bytes, String defaultTitle) async {
+  Future<void> addAttachment(String name, Uint8List bytes, String defaultTitle) =>
+      addAttachmentFrom(name, bytes.length, () => Stream.value(bytes), defaultTitle);
+
+  /// Like [addAttachment], but streams the file in so a 300 MB book is never
+  /// held twice in memory, and reports progress. When [movable] is the path of
+  /// a temporary copy the picker already made, it is moved instead of copied.
+  Future<void> addAttachmentFrom(String name, int length, Stream<List<int>> Function() open, String defaultTitle,
+      {String? movable}) async {
     final ext = extensionOf(name);
     if (legacyOffice.contains(ext)) throw AttachRejected('legacy', name);
     if (!supportedExtensions.contains(ext)) throw AttachRejected('unsupported', name);
-    if (bytes.length > maxFileBytes) throw AttachRejected('tooLarge', name);
-    final bad = validateBytes(ext, bytes);
-    if (bad != null) throw AttachRejected(bad, name);
+    if (length > maxFileBytes) throw AttachRejected('tooLarge', name);
 
     processing++;
-    notifyListeners();
+    loadName = name;
+    _shownPercent = -1;
+    // Reading the pages is most of the work for PDFs and Office files.
+    final copyShare = const {'pdf', 'docx', 'pptx', 'xlsx'}.contains(ext) ? 0.15 : 0.9;
+    _progress('copy', 0);
+    File? file;
+    var keep = false;
     try {
       final conv = await _ensureConversation(defaultTitle);
       final id = _uuid.v4();
       final dir = _filesDir(conv.id);
       await dir.create(recursive: true);
-      final file = File('${dir.path}/$id.$ext');
-      await file.writeAsBytes(bytes, flush: true);
-      // Office text extraction can take a moment on big files; keep the UI responsive.
-      final result = await Isolate.run(() => extractText(ext, bytes));
+      file = File('${dir.path}/$id.$ext');
+      var moved = false;
+      if (movable != null) {
+        try {
+          await File(movable).rename(file.path);
+          moved = true;
+        } catch (_) {}
+      }
+      if (!moved) {
+        final sink = file.openWrite();
+        var got = 0;
+        try {
+          await for (final chunk in open()) {
+            sink.add(chunk);
+            got += chunk.length;
+            if (got > maxFileBytes) throw AttachRejected('tooLarge', name);
+            if (length > 0) _progress('copy', copyShare * (got / length).clamp(0, 1));
+          }
+          await sink.flush();
+        } finally {
+          await sink.close();
+        }
+      }
+      final size = await file.length();
+      if (size > maxFileBytes) throw AttachRejected('tooLarge', name);
+      final head = await _head(file);
+      final bad = validateBytes(ext, head);
+      if (bad != null) throw AttachRejected(bad, name);
+      _progress('read', copyShare);
+
+      final result = const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext)
+          ? ExtractResult(null)
+          : await _extract(file.path, ext, (done, total) {
+              _progress('read', copyShare + (1 - copyShare) * (total == 0 ? 1 : done / total), done: done, total: total);
+            });
+      _progress('read', 1);
       pending.add(Attachment(
         id: id,
         name: name,
         ext: ext,
-        size: bytes.length,
+        size: size,
         path: file.path,
         extractedText: result.text,
         note: result.note,
+        pages: result.pages,
+        textPages: result.textPages,
       ));
+      keep = true;
     } finally {
+      if (!keep && file != null) {
+        try {
+          if (await file.exists()) await file.delete();
+        } catch (_) {}
+      }
       processing--;
+      if (processing == 0) {
+        loadName = null;
+        loadProgress = null;
+        loadStage = '';
+      }
       notifyListeners();
+    }
+  }
+
+  static Future<Uint8List> _head(File f) async {
+    final raf = await f.open();
+    try {
+      return await raf.read(8192);
+    } finally {
+      await raf.close();
+    }
+  }
+
+  /// Reads the text in a background isolate (the file is opened there, so
+  /// big books are not copied between isolates) with page-by-page progress.
+  static Future<ExtractResult> _extract(String path, String ext, ExtractProgress onProgress) async {
+    final port = ReceivePort();
+    final done = Completer<ExtractResult>();
+    port.listen((m) {
+      if (m is List && m.length == 2 && m[0] is int) {
+        onProgress(m[0] as int, m[1] as int);
+      } else if (m is ExtractResult) {
+        if (!done.isCompleted) done.complete(m);
+      } else if (!done.isCompleted) {
+        // An error (a list of message and stack) or the isolate ended without an answer.
+        debugPrint('extract: $m');
+        done.complete(ExtractResult(null, note: 'extractFailed'));
+      }
+    });
+    try {
+      await Isolate.spawn(_extractWorker, (port.sendPort, path, ext), onError: port.sendPort, onExit: port.sendPort);
+      return await done.future;
+    } catch (e) {
+      debugPrint('extract: $e');
+      return ExtractResult(null, note: 'extractFailed');
+    } finally {
+      port.close();
     }
   }
 

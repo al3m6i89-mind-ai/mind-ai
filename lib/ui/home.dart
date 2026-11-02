@@ -1,10 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
 import '../core/models.dart';
@@ -78,16 +79,55 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Paperclip: the phone's file manager (any document).
   Future<void> pickFiles() async {
+    final store = context.read<AppStore>();
     final List<PlatformFile> files;
+    Timer? watch;
     try {
-      files = await FilePicker.pickFiles(type: FileType.any);
+      files = await FilePicker.pickFiles(
+        type: FileType.any,
+        // Android copies the chosen file before handing it over, which takes a
+        // while for big books; show how much has arrived meanwhile.
+        onFileLoading: (status) {
+          if (status == FilePickerStatus.picking) {
+            store.preparing(true);
+            watch ??= Timer.periodic(const Duration(milliseconds: 400), (_) async {
+              final n = await _pickerCopyBytes();
+              if (n > 0 && store.loadStage == 'prepare') store.preparing(true, bytes: n);
+            });
+          }
+        },
+      );
     } catch (e) {
       if (mounted) _toast(e.toString(), error: true);
       return;
+    } finally {
+      watch?.cancel();
+      store.preparing(false);
     }
     for (final f in files) {
       if (!mounted) return;
-      await _add(f.name, await f.length(), f.readAsBytes);
+      await _add(f.name, await f.length(), f.readAsByteStream, movable: f.path);
+    }
+  }
+
+  /// Size of the newest file the picker is copying into its cache folder.
+  static Future<int> _pickerCopyBytes() async {
+    try {
+      final dir = Directory('${(await getTemporaryDirectory()).path}/file_picker');
+      if (!await dir.exists()) return 0;
+      var newest = DateTime(2000);
+      var size = 0;
+      await for (final e in dir.list(recursive: true)) {
+        if (e is! File) continue;
+        final st = await e.stat();
+        if (st.modified.isAfter(newest)) {
+          newest = st.modified;
+          size = st.size;
+        }
+      }
+      return DateTime.now().difference(newest) < const Duration(seconds: 5) ? size : 0;
+    } catch (_) {
+      return 0;
     }
   }
 
@@ -103,11 +143,12 @@ class _HomeScreenState extends State<HomeScreen> {
     }
     for (final x in images) {
       if (!mounted) return;
-      await _add(x.name, await x.length(), x.readAsBytes);
+      await _add(x.name, await x.length(), () => x.openRead());
     }
   }
 
-  Future<void> _add(String name, int? length, Future<Uint8List> Function() read) async {
+  /// [movable] is the picker's own temporary copy, moved into the chat instead of copied again.
+  Future<void> _add(String name, int? length, Stream<List<int>> Function() open, {String? movable}) async {
     // Size is checked before reading so a huge file is never loaded into memory.
     final store = context.read<AppStore>();
     if (length != null && length > store.maxFileBytes) {
@@ -118,12 +159,14 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       return;
     }
-    final bytes = await read();
-    if (!mounted) return;
     try {
-      await context.read<AppStore>().addAttachment(name, bytes, s.t('newChat'));
+      await store.addAttachmentFrom(name, length ?? 0, open, s.t('newChat'),
+          movable: movable != null && movable.contains('/file_picker/') ? movable : null);
     } on AttachRejected catch (e) {
       if (mounted) _toast(s.t(e.key, {'name': e.name}), error: true);
+    } catch (e) {
+      debugPrint('attach: $e');
+      if (mounted) _toast(s.t('extractFailedToast', {'name': name}), error: true);
     }
   }
 
@@ -534,7 +577,7 @@ class _Composer extends StatelessWidget {
           AnimatedSize(
             duration: const Duration(milliseconds: 220),
             curve: Curves.easeOutCubic,
-            child: store.pending.isEmpty && store.processing == 0
+            child: store.pending.isEmpty && store.processing == 0 && store.loadStage != 'prepare'
                 ? const SizedBox(width: double.infinity)
                 : SizedBox(
                     height: 66,
@@ -547,15 +590,7 @@ class _Composer extends StatelessWidget {
                             padding: const EdgeInsetsDirectional.only(end: 8),
                             child: AttachmentCard(attachment: a, s: s, onRemove: () => store.removePending(a), compact: true),
                           ),
-                        if (store.processing > 0)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 12),
-                            child: Row(children: [
-                              const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)),
-                              const SizedBox(width: 8),
-                              Text(s.t('analyzing'), style: TextStyle(color: context.muted)),
-                            ]),
-                          ),
+                        if (store.processing > 0 || store.loadStage == 'prepare') LoadProgress(store: store, s: s),
                       ],
                     ),
                   ),
@@ -976,6 +1011,63 @@ class _ChatsDrawerState extends State<_ChatsDrawer> {
           ),
         ),
       ),
+    );
+  }
+}
+
+
+/// The ring under the composer while a file is added: how much of it has
+/// been read, as a percentage, and what is happening now.
+class LoadProgress extends StatelessWidget {
+  const LoadProgress({super.key, required this.store, required this.s});
+  final AppStore store;
+  final S s;
+
+  static String mb(int bytes) => (bytes / (1024 * 1024)).toStringAsFixed(bytes < 10 * 1024 * 1024 ? 1 : 0);
+
+  @override
+  Widget build(BuildContext context) {
+    final p = store.loadProgress;
+    final pct = p == null ? null : (p * 100).floor().clamp(0, 100);
+    final stage = switch (store.loadStage) {
+      'prepare' => store.loadBytes > 0 ? s.t('loadPrepareMb', {'mb': mb(store.loadBytes)}) : s.t('loadPrepare'),
+      'copy' => s.t('loadCopy'),
+      'read' when store.loadTotal > 1 => s.t('loadPages', {'done': '${store.loadDone}', 'total': '${store.loadTotal}'}),
+      _ => s.t('analyzing'),
+    };
+    final name = store.loadName ?? '';
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 8),
+      child: Row(children: [
+        SizedBox(
+          width: 46,
+          height: 46,
+          child: Stack(alignment: Alignment.center, children: [
+            SizedBox.expand(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween(end: p ?? 0),
+                duration: const Duration(milliseconds: 250),
+                builder: (_, v, _) => CircularProgressIndicator(
+                  value: p == null ? null : v,
+                  strokeWidth: 3.5,
+                  backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.14),
+                ),
+              ),
+            ),
+            if (pct != null)
+              Text('$pct%', style: const TextStyle(fontSize: 11.5, fontWeight: FontWeight.w700, fontFeatures: [FontFeature.tabularFigures()])),
+          ]),
+        ),
+        const SizedBox(width: 10),
+        ConstrainedBox(
+          constraints: const BoxConstraints(maxWidth: 220),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            if (name.isNotEmpty)
+              Text(name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13)),
+            Text(stage, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: context.muted, fontSize: 12)),
+          ]),
+        ),
+      ]),
     );
   }
 }

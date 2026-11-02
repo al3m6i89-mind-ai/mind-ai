@@ -413,6 +413,30 @@ void main() {
     await f.stop();
   });
 
+  test('a big PDF that is all text sends its relevant pages, without uploading', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    final big = await tempFile('book.pdf', List.filled(6 * 1024 * 1024, 32));
+    final text = StringBuffer();
+    for (var i = 1; i <= 300; i++) {
+      text.writeln('\n[الصفحة $i / Page $i]');
+      text.writeln(i == 210 ? 'Warranty period is 24 months.' : 'Chapter $i on soil, water and seasonal crops. ' * 10);
+    }
+    final a = Attachment(
+        id: 'k', name: 'book.pdf', ext: 'pdf', size: 6 * 1024 * 1024, path: big.path,
+        extractedText: text.toString(), pages: 300, textPages: 300);
+    final c = Conversation(id: 'c', title: 't', messages: [
+      Message(id: 'm', role: Role.user, text: 'How long is the warranty period?', attachments: [a]),
+    ]);
+    final (answer, _) = await run(f.client(), c);
+    expect(answer, 'ok from g:gemini-flash-latest');
+    expect(f.calls, ['config', 'g:gemini-flash-latest']);
+    final sent = jsonEncode(f.bodies['g:gemini-flash-latest']);
+    expect(sent, contains('Warranty period is 24 months'));
+    expect(sent.length, lessThan(120000));
+    await f.stop();
+  });
+
   test('paid plan starts with Gemini Pro; the direct free server is always last', () async {
     final f = FakeAi({}, config: gem);
     await f.start();

@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
+import 'retrieve.dart';
 
 class AiException implements Exception {
   AiException(this.message);
@@ -194,6 +195,9 @@ class AiClient {
   static const maxInlineBytes = 14 * 1024 * 1024;
   static const maxInlineFile = 4 * 1024 * 1024;
   static const maxGeminiPdf = 50 * 1024 * 1024;
+
+  /// Characters of a big document's text sent with each question.
+  static const retrievalBudget = 48000;
 
   /// Used when the proxy's /config cannot be read. Mirrors proxy/src/index.js.
   static const defaultChain = [
@@ -482,10 +486,13 @@ class AiClient {
       final role = m.role == Role.assistant ? 'model' : 'user';
       final parts = <Map<String, dynamic>>[];
       for (final a in m.attachments) {
-        final bytes = a.sentAsBinary ? await _bytes(a) : null;
-        if (bytes == null || (a.isPdf && bytes.length > maxGeminiPdf)) {
-          // Gemini reads PDFs up to 50 MB; a bigger one is sent as the text read on the phone.
-          parts.add({'text': _asText(a)});
+        // Gemini reads PDFs up to 50 MB. Bigger ones, and big PDFs that are all
+        // text, go as the text read on the phone: the pages that answer the
+        // question, which is much faster than uploading and reading the book.
+        final asText = !a.sentAsBinary || (a.isPdf && (a.size > maxGeminiPdf || (a.size > maxInlineFile && a.textual)));
+        final bytes = asText ? null : await _bytes(a);
+        if (bytes == null) {
+          parts.add({'text': _asText(a, conv)});
         } else if (bytes.length <= maxInlineFile && inlineBytes + bytes.length <= maxInlineBytes) {
           inlineBytes += bytes.length;
           parts.add({'text': '[ملف مرفق: ${a.name}]'});
@@ -609,7 +616,7 @@ class AiClient {
             'image_url': stringImages ? url : {'url': url},
           });
         } else {
-          parts.add({'type': 'text', 'text': _asText(a)});
+          parts.add({'type': 'text', 'text': _asText(a, conv)});
         }
       }
       if (m.text.trim().isNotEmpty) parts.add({'type': 'text', 'text': m.text});
@@ -637,10 +644,17 @@ class AiClient {
     return await f.exists() ? f.readAsBytes() : null;
   }
 
-  String _asText(Attachment a) {
+  String _asText(Attachment a, Conversation conv) {
     final text = a.extractedText;
     if (text != null && text.trim().isNotEmpty) {
-      return '[ملف مرفق: ${a.name} (${a.typeLabel})]\n$text\n[نهاية الملف: ${a.name}]';
+      final asks = [for (final m in conv.messages) if (m.role == Role.user && m.text.trim().isNotEmpty) m.text];
+      final r = relevant(text,
+          asks.isEmpty ? '' : asks.last, context: asks.length > 1 ? asks[asks.length - 2] : '', budget: retrievalBudget);
+      if (r.whole) return '[ملف مرفق: ${a.name} (${a.typeLabel})]\n$text\n[نهاية الملف: ${a.name}]';
+      return '[ملف مرفق: ${a.name} (${a.typeLabel}) — ملف كبير، هذه ${r.shown} من أصل ${r.total} '
+          '${a.isPdf ? 'صفحة' : 'جزء'} هي الأكثر صلة بالسؤال الأخير. أجب منها واذكر رقم الصفحة. '
+          'إذا لم تجد الإجابة فيها فقل ذلك، واقترح على المستخدم كلمات أدق أو رقم الصفحة.]\n'
+          '${r.text}\n[نهاية المقتطفات من: ${a.name}]';
     }
     return '[ملف مرفق: ${a.name} — لا يمكن قراءة محتواه على هذا الخادم (قد يكون ممسوحاً ضوئياً أو محذوفاً). لا تخمّن محتواه، وأخبر المستخدم بذلك.]';
   }

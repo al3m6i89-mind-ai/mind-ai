@@ -18,6 +18,8 @@ class Attachment {
     this.geminiUri,
     this.geminiUriExpires,
     this.geminiSlot,
+    this.pages,
+    this.textPages,
     DateTime? createdAt,
   }) : createdAt = createdAt ?? DateTime.now();
 
@@ -30,6 +32,17 @@ class Attachment {
 
   /// Why the content could not be read, if it could not.
   final String? note;
+
+  /// PDFs: page count, and how many pages had a text layer.
+  final int? pages;
+  final int? textPages;
+
+  /// A PDF whose pages are (nearly) all text, so the text read on the phone
+  /// answers as well as the original and is much faster to send.
+  bool get textual {
+    final p = pages, t = textPages;
+    return isPdf && p != null && p > 0 && t != null && t >= p * 0.85 && (extractedText ?? '').trim().isNotEmpty;
+  }
   final DateTime createdAt;
 
   /// A big file uploaded to Gemini's file store (kept there for 48 hours),
@@ -75,6 +88,8 @@ class Attachment {
         if (geminiUri != null) 'geminiUri': geminiUri,
         if (geminiUriExpires != null) 'geminiUriExpires': geminiUriExpires!.toIso8601String(),
         if (geminiSlot != null) 'geminiSlot': geminiSlot,
+        if (pages != null) 'pages': pages,
+        if (textPages != null) 'textPages': textPages,
         'createdAt': createdAt.toIso8601String(),
       };
 
@@ -89,6 +104,8 @@ class Attachment {
         geminiUri: j['geminiUri'] as String?,
         geminiUriExpires: DateTime.tryParse(j['geminiUriExpires'] as String? ?? ''),
         geminiSlot: j['geminiSlot'] as int?,
+        pages: j['pages'] as int?,
+        textPages: j['textPages'] as int?,
         createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
       );
 }

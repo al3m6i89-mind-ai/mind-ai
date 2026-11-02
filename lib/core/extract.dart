@@ -7,16 +7,24 @@ import 'package:syncfusion_flutter_pdf/pdf.dart';
 /// Pulls readable text out of documents on the phone, keeping where each part
 /// came from (slide number, sheet and cell) so answers can cite it.
 class ExtractResult {
-  ExtractResult(this.text, {this.note});
+  ExtractResult(this.text, {this.note, this.pages, this.textPages});
   final String? text;
   final String? note;
+
+  /// PDFs: how many pages the file has, and how many of them have text.
+  final int? pages;
+  final int? textPages;
 }
+
+/// Reports how far reading has got: [done] of [total] steps (PDF pages).
+typedef ExtractProgress = void Function(int done, int total);
 
 const supportedExtensions = {
   'pdf', 'docx', 'pptx', 'xlsx', 'txt', 'csv', 'md', 'markdown', 'jpg', 'jpeg', 'png', 'webp', //
 };
 const legacyOffice = {'doc', 'ppt', 'xls'};
-const maxTextChars = 400000;
+/// Big books are kept whole; questions about them send only the relevant pages (see retrieve.dart).
+const maxTextChars = 1500000;
 
 String extensionOf(String name) => name.contains('.') ? name.split('.').last.toLowerCase() : '';
 
@@ -36,25 +44,30 @@ String? validateBytes(String ext, Uint8List b) {
   return ok ? null : 'contentMismatch';
 }
 
-ExtractResult extractText(String ext, Uint8List bytes) {
+ExtractResult extractText(String ext, Uint8List bytes, {ExtractProgress? onProgress}) {
   try {
+    if (ext == 'pdf') return _limit(_pdf(bytes, onProgress));
     final text = switch (ext) {
       'txt' || 'csv' || 'md' || 'markdown' => _decodeText(bytes),
       'docx' => _docx(bytes),
       'pptx' => _pptx(bytes),
       'xlsx' => _xlsx(bytes),
-      'pdf' => _pdf(bytes),
       _ => null,
     };
     if (text == null) return ExtractResult(null);
-    if (text.trim().isEmpty) return ExtractResult(null, note: 'noText');
-    if (text.length > maxTextChars) {
-      return ExtractResult(text.substring(0, maxTextChars), note: 'truncated');
-    }
-    return ExtractResult(text);
+    return _limit(ExtractResult(text));
   } catch (_) {
     return ExtractResult(null, note: 'extractFailed');
   }
+}
+
+ExtractResult _limit(ExtractResult r) {
+  final text = r.text ?? '';
+  if (text.trim().isEmpty) return ExtractResult(null, note: 'noText', pages: r.pages, textPages: 0);
+  if (text.length > maxTextChars) {
+    return ExtractResult(text.substring(0, maxTextChars), note: 'truncated', pages: r.pages, textPages: r.textPages);
+  }
+  return r;
 }
 
 String _decodeText(Uint8List b) {
@@ -104,22 +117,36 @@ String _docx(Uint8List bytes) {
 
 /// The PDF's text layer, page by page, so answers from any server can cite pages.
 /// Scanned PDFs have none; Gemini still reads those from the original.
-String _pdf(Uint8List bytes) {
+ExtractResult _pdf(Uint8List bytes, ExtractProgress? onProgress) {
   final doc = PdfDocument(inputBytes: bytes);
   try {
     final ex = PdfTextExtractor(doc);
     final out = StringBuffer();
-    for (var i = 0; i < doc.pages.count; i++) {
-      final t = ex.extractText(startPageIndex: i, endPageIndex: i).trim();
+    final count = doc.pages.count;
+    var withText = 0;
+    onProgress?.call(0, count);
+    for (var i = 0; i < count; i++) {
+      String t;
+      try {
+        t = ex.extractText(startPageIndex: i, endPageIndex: i).trim();
+      } catch (_) {
+        t = ''; // One broken page should not lose the whole book.
+      }
+      onProgress?.call(i + 1, count);
       if (t.isEmpty) continue;
-      out.writeln('\n[الصفحة ${i + 1} / Page ${i + 1}]');
+      withText++;
+      out.writeln('\n${pageMark(i + 1)}');
       out.writeln(t);
+      if (out.length > maxTextChars) break;
     }
-    return out.toString();
+    return ExtractResult(out.toString(), pages: count, textPages: withText);
   } finally {
     doc.dispose();
   }
 }
+
+/// The line that starts each PDF page's text; answers cite it and retrieve.dart splits on it.
+String pageMark(int n) => '[الصفحة $n / Page $n]';
 
 String _pptx(Uint8List bytes) {
   final a = _zip(bytes);
