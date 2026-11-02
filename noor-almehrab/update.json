@@ -1,8 +1,8 @@
 {
-  "versionCode": 14,
-  "versionName": "1.7.2",
-  "apkUrl": "https://www.dropbox.com/scl/fi/onmssx79hvdzc6iok8o4b/NoorAlmehrab.apk?rlkey=2xc64j1g2wrmv328b35badiwm&st=qluqlg7p&dl=1",
-  "releasedAt": "2026-11-02",
-  "notes_ar": "• إصلاح: إيقاف الصوت القديم تلقائياً عند تغيير صوت المؤذن",
-  "notes_en": "• Fix: stop the previous adhan sound before playing the newly selected one"
+  "versionCode": 15,
+  "versionName": "1.7.3",
+  "apkUrl": "https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/builds/noor-almehrab/NoorAlmehrab.apk",
+  "releasedAt": 1762116000000,
+  "notes_ar": "• التحديث التلقائي الآن عبر GitHub مباشرةً",
+  "notes_en": "• In-app updates now served directly from GitHub"
 }
