@@ -4,4 +4,4 @@
 
 | التطبيق | الإصدار | تحميل APK |
 |---|---|---|
-| نور المحراب (noor-almehrab) | 1.7.1 | [NoorAlmehrab.apk](https://github.com/al3m6i89-mind-ai/mind-ai/raw/builds/noor-almehrab/NoorAlmehrab.apk) |
+| نور المحراب (noor-almehrab) | 1.7.2 | [NoorAlmehrab.apk](https://github.com/al3m6i89-mind-ai/mind-ai/raw/builds/noor-almehrab/NoorAlmehrab.apk) |

@@ -1,10 +1,8 @@
 {
-  "versionCode": 13,
-  "versionName": "1.7.1",
-  "apkUrl": "https://www.dropbox.com/scl/fi/onmssx79hvdzc6iok8o4b/NoorAlmehrab.apk?rlkey=2xc64j1g2wrmv328b35badiwm&dl=1",
-  "releasedAt": 1793193111709,
-  "notes_ar": "• لغتان جديدتان: التركية والأردية\n• ألوان أوضح في السبحة والتقويم الهجري والأذكار في الوضعين الليلي والنهاري",
-  "notes_en": "• Two new languages: Turkish and Urdu\n• Clearer colors in Tasbih, Hijri calendar and Adhkar in dark and light mode",
-  "notes_tr": "• İki yeni dil: Türkçe ve Urduca\n• Tesbih, Hicri takvim ve zikirlerde koyu ve açık modda daha net renkler",
-  "notes_ur": "• دو نئی زبانیں: ترکی اور اردو\n• تسبیح، ہجری کیلنڈر اور اذکار میں ڈارک اور لائٹ موڈ میں واضح رنگ"
+  "versionCode": 14,
+  "versionName": "1.7.2",
+  "apkUrl": "https://www.dropbox.com/scl/fi/onmssx79hvdzc6iok8o4b/NoorAlmehrab.apk?rlkey=2xc64j1g2wrmv328b35badiwm&st=qluqlg7p&dl=1",
+  "releasedAt": "2026-11-02",
+  "notes_ar": "• إصلاح: إيقاف الصوت القديم تلقائياً عند تغيير صوت المؤذن",
+  "notes_en": "• Fix: stop the previous adhan sound before playing the newly selected one"
 }
