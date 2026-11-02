@@ -256,6 +256,14 @@ assert.deepEqual([sara.email, sara.provider, sara.questions, sara.today], ['sara
 assert.ok(j.totals.users >= 1 && j.totals.questionsToday >= 1 && j.days.length === 14);
 assert.equal(j.totals.byEmail, 1);
 
+// The owner has the paid plan without a practical limit.
+j = await (await worker.fetch(req('/quota', 't', 'GET', { 'x-user-token': bossTok }), adminEnv)).json();
+assert.deepEqual([j.plan, j.limit >= 100000, j.until > Date.now() + 50 * 365 * 86400000], ['premium', true, true]);
+for (let i = 0; i < 25; i++) {
+  r = await worker.fetch(req('/q/v1/chat/completions', 't', 'POST', { 'x-user-token': bossTok, 'x-question-id': 'boss' + i }), adminEnv);
+  assert.equal(r.status, 200, 'owner question ' + i);
+}
+
 // Blocking from the dashboard.
 const adminPost = (body, tok = bossTok) => worker.fetch(new Request('https://proxy.example/admin', {
   method: 'POST', headers: { 'x-app-token': 't', 'x-user-token': tok }, body: JSON.stringify(body) }), adminEnv);

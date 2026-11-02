@@ -66,6 +66,9 @@ const LIMITS = {
   help: { free: 40, premium: 40 },
   voice: { free: 30, premium: 300 }, // spoken questions turned into text
 };
+// The owner's accounts (ADMIN_EMAILS): the paid plan, without a practical limit.
+const OWNER_LIMIT = 100000;
+const OWNER_UNTIL = Date.parse('2100-01-01T00:00:00Z');
 
 const QUESTION_WINDOW_MS = 30 * 60 * 1000; // one question id stays usable this long
 const QUESTION_MAX_REQUESTS = 150; // and for this many requests (uploads poll while files process)
@@ -295,9 +298,9 @@ export function dashboard(sql, now = Date.now()) {
 /** Quota with the limit of the account's plan. */
 export function planned(sql, body, now = Date.now()) {
   if (isBlocked(sql, body.uid)) return { ok: false, why: 'blocked', left: 0, limit: 0, plan: 'free', until: 0 };
-  const until = premiumUntil(sql, body.uid, now);
+  const until = body.owner ? OWNER_UNTIL : premiumUntil(sql, body.uid, now);
   const plan = until > now ? 'premium' : 'free';
-  const limit = LIMITS[body.kind][plan];
+  const limit = body.owner ? OWNER_LIMIT : LIMITS[body.kind][plan];
   const args = { ...body, limit, now };
   const r = body.op === 'status' ? quotaStatus(sql, args) : quotaCheck(sql, args);
   if (body.op !== 'status' && r.ok) noteUse(sql, { ...body, fresh: r.fresh, now });
@@ -346,6 +349,7 @@ async function admit(request, env, statusOnly = false) {
   const r = await quota(env, {
     op: statusOnly ? 'status' : 'check', uid: claims.sub, device, qid, kind,
     email: claims.email || claims.phone_number || '', provider: claims.firebase?.sign_in_provider || '',
+    owner: isAdmin(claims, env),
   });
   const headers = {
     'x-quota-left': String(r.left),

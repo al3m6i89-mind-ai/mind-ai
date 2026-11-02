@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
 import '../core/strings.dart';
+import 'admin.dart';
 import 'plans.dart';
 import 'theme.dart';
 
@@ -26,6 +27,7 @@ class AccountScreen extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final u = store.auth.user;
     final premium = store.premium;
+    final owner = Admin.isOwner(u?.email);
     const gold = Color(0xFFE0A100);
 
     final google = u?.providerData.any((p) => p.providerId == 'google.com') ?? false;
@@ -118,7 +120,10 @@ class AccountScreen extends StatelessWidget {
                   color: premium ? gold : null),
               row(Icons.payments_outlined, s.t('fPrice'),
                   premium ? (price == null ? s.t('monthly') : '$price / ${s.t('month')}') : s.t('free')),
-              if (premium) row(Icons.autorenew_rounded, s.t('fRenew'), s.t('renewPlay')),
+              if (premium)
+                row(Icons.autorenew_rounded, s.t('fRenew'),
+                    owner ? s.t('ownerPlan') : s.t('renewPlay')),
+              if (!owner)
               row(Icons.chat_bubble_outline_rounded, s.t('fUsedToday'),
                   premium ? '${store.questionsToday}' : '${store.questionsToday} / ${Plan.freeDailyQuestions}'),
               row(Icons.hourglass_bottom_rounded, s.t('fLeftToday'),
@@ -129,6 +134,7 @@ class AccountScreen extends StatelessWidget {
               row(Icons.insert_drive_file_outlined, s.t('fMaxFile'),
                   s.t('mbN', {'n': '${(premium ? Plan.premiumMaxFileBytes : Plan.freeMaxFileBytes) ~/ (1024 * 1024)}'})),
               row(Icons.shield_outlined, s.t('fAdblock'), s.t(premium ? 'adNotNeeded' : 'adMustOff')),
+              if (!owner)
               Padding(
                 padding: const EdgeInsets.only(top: 8, bottom: 10),
                 child: premium
@@ -169,7 +175,7 @@ class AccountScreen extends StatelessWidget {
                     ),
                   );
                   if (ok == true) {
-                    await store.auth.signOut();
+                    await store.signOut();
                     if (context.mounted) Navigator.popUntil(context, (r) => r.isFirst);
                   }
                 },

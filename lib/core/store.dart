@@ -81,6 +81,8 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<void> _setPremium(bool active, String? token) async {
+    // No Play purchase, but the server gives this account the paid plan (the owner's).
+    if (!active && _prefs.getBool('premiumFromServer') == true) return;
     if (!active || token == null || token.isEmpty) return _markPremium(active);
     final verified = await verifyPurchase(token);
     // Unknown (offline, or checks not set up on the server yet): show what Play says.
@@ -171,6 +173,16 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
+  /// Signs out; a paid plan the server gave this account stays with it.
+  Future<void> signOut() async {
+    await auth.signOut();
+    if (_prefs.getBool('premiumFromServer') == true) {
+      await _prefs.remove('premiumFromServer');
+      _markPremium(false);
+    }
+    _rechecked = false;
+  }
+
   bool _rechecked = false;
 
   /// Asks the proxy how many free questions are left today, and which plan it
@@ -188,7 +200,15 @@ class AppStore extends ChangeNotifier {
       if (res.statusCode == 200) {
         final j = jsonDecode(res.body) as Map<String, dynamic>;
         if (j['plan'] == 'premium') {
+          // Also the owner's accounts, which the server gives the paid plan.
+          _prefs.setBool('premiumFromServer', true);
           _markPremium(true);
+        } else if (_prefs.getBool('premiumFromServer') == true) {
+          // Another account on this phone: the server's paid plan does not carry over.
+          _prefs.remove('premiumFromServer');
+          _markPremium(false);
+          _rechecked = true;
+          await billing.refresh();
         } else if (premium && j['verify'] == true && !_rechecked) {
           // The server has no record (new account, or the month renewed): send Play's token again.
           _rechecked = true;
