@@ -129,6 +129,11 @@ Retrieved relevant(String text, String question, {String context = '', int budge
   }
   for (final w in _queryWords(question)) {
     query[w] = 1;
+    // PDFs of right-to-left text often store numbers backwards (3241 as 1423).
+    if (w.length > 2 && RegExp(r'^\d+$').hasMatch(w)) {
+      final back = w.split('').reversed.join();
+      query.putIfAbsent(back, () => 0.8);
+    }
   }
   final qList = _queryWords(question);
 
@@ -191,8 +196,11 @@ Retrieved relevant(String text, String question, {String context = '', int budge
     for (final (k, i) in ranked.indexed) {
       if (used >= budget) break;
       take(i);
-      // An answer often runs on to the next page.
-      if (k < 3) take(i + 1);
+      // An answer often runs on to the next page, or its question starts on the one before.
+      if (k < 3) {
+        take(i + 1);
+        take(i - 1);
+      }
     }
   }
 

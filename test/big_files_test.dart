@@ -73,6 +73,17 @@ void main() {
       expect(r.shown, greaterThan(10));
     });
 
+    test('a number stored backwards in the PDF is still found', () {
+      final b = StringBuffer();
+      for (var i = 1; i <= 300; i++) {
+        b.writeln('\n${pageMark(i)}');
+        b.writeln(i == 29 ? 'أين مكان العدد ١٤٢٣ على خط الأعداد؟ الجواب: أقل من نقطة المنتصف' : 'تمارين الجمع والطرح والضرب للصف الرابع. ' * 15);
+      }
+      final r = relevant(b.toString(), 'أين مكان العدد 3241 على خط الأعداد؟');
+      expect(r.text, contains('[الصفحة 29 / Page 29]'));
+      expect(r.text, contains('[الصفحة 28 / Page 28]'), reason: 'the question may start a page earlier');
+    });
+
     test('a small file is sent whole', () {
       final r = relevant(book(3), 'سؤال');
       expect(r.whole, isTrue);
