@@ -346,7 +346,8 @@ class S {
 
   String authError(String code) {
     final key = 'auth_$code';
-    return (ar ? _ar[key] : _en[key]) ?? t('auth_unknown');
+    // An unexpected failure shows its code, so it can be reported and fixed.
+    return (ar ? _ar[key] : _en[key]) ?? '${t('auth_unknown')} ($code)';
   }
 
   /// Turns an AiException code (or raw message) into readable text.

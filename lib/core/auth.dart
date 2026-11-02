@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 
 /// The Firebase project used for sign-in (values from its google-services.json;
 /// they identify the project and are not secret). Empty until the project is
@@ -13,6 +14,10 @@ class FirebaseSetup {
       String.fromEnvironment('FIREBASE_APP_ID', defaultValue: '1:463476849908:android:d32305ad3915b7c0e8b2a1');
   static const senderId = String.fromEnvironment('FIREBASE_SENDER_ID', defaultValue: '463476849908');
   static const projectId = String.fromEnvironment('FIREBASE_PROJECT_ID', defaultValue: 'file-chat-224b4');
+  /// The project's Web OAuth client (client_type 3 in google-services.json),
+  /// which Google's account picker needs to hand Firebase an ID token.
+  static const webClientId = String.fromEnvironment('GOOGLE_WEB_CLIENT_ID',
+      defaultValue: '463476849908-0b871iie2oa3nkbernmph11mt93ps4ed.apps.googleusercontent.com');
   static bool get configured => apiKey.isNotEmpty && appId.isNotEmpty && projectId.isNotEmpty;
 }
 
@@ -66,9 +71,31 @@ class Auth extends ChangeNotifier {
     return null;
   }
 
-  /// Returns null on success, or an error code for [S.authError].
-  Future<String?> google() =>
-      _guard(() => FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider()..addScope('email')));
+  bool _googleReady = false;
+
+  /// Returns null on success, or an error code for [S.authError]. Uses
+  /// Android's own account picker when the Web client is known, otherwise
+  /// Firebase's browser sign-in.
+  Future<String?> google() async {
+    if (FirebaseSetup.webClientId.isEmpty) {
+      return _guard(() => FirebaseAuth.instance.signInWithProvider(GoogleAuthProvider()..addScope('email')));
+    }
+    try {
+      final g = GoogleSignIn.instance;
+      if (!_googleReady) {
+        await g.initialize(serverClientId: FirebaseSetup.webClientId);
+        _googleReady = true;
+      }
+      final account = await g.authenticate();
+      final idToken = account.authentication.idToken;
+      if (idToken == null) return 'no-id-token';
+      return await _guard(() => FirebaseAuth.instance.signInWithCredential(GoogleAuthProvider.credential(idToken: idToken)));
+    } on GoogleSignInException catch (e) {
+      return e.code == GoogleSignInExceptionCode.canceled ? 'canceled' : 'google-${e.code.name}';
+    } catch (e) {
+      return 'unknown:${e.runtimeType}';
+    }
+  }
 
   /// Sends the SMS code. Completes when the code is sent (or the phone
   /// verified itself automatically, then [user] is set).
@@ -113,9 +140,11 @@ class Auth extends ChangeNotifier {
       await f();
       return null;
     } on FirebaseAuthException catch (e) {
+      debugPrint('auth: ${e.code} ${e.message}');
       return e.code;
     } catch (e) {
-      return 'unknown';
+      debugPrint('auth: $e');
+      return 'unknown:${e.runtimeType}';
     }
   }
 }
