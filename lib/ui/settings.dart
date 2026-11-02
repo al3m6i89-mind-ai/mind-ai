@@ -5,10 +5,12 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../core/plan.dart';
 import '../core/store.dart';
+import '../core/updates.dart';
 import '../core/strings.dart';
 import 'account.dart';
 import 'plans.dart';
 import 'theme.dart';
+import 'update_sheet.dart';
 import 'version_label.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -92,6 +94,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         )
                       : FilledButton(onPressed: () => openPlans(context), child: Text(s.t('upgrade'))),
                 ]),
+              ),
+            ]),
+            section(s.t('updates'), [
+              ListenableBuilder(
+                listenable: store.updates,
+                builder: (context, _) {
+                  final u = store.updates;
+                  final checking = u.state == UpdateState.checking;
+                  Widget? status;
+                  if (u.hasUpdate) {
+                    status = ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Icon(Icons.system_update_rounded, color: primary),
+                      title: Text(s.t('updateAvailable'), style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(s.t('updateVersion', {'v': u.latest!.version})),
+                      trailing: FilledButton(
+                        onPressed: () => showUpdateSheet(context, u, s),
+                        child: Text(s.t('updateNow')),
+                      ),
+                    );
+                  } else if (u.state == UpdateState.upToDate) {
+                    status = Row(children: [
+                      Icon(Icons.check_circle_rounded, color: primary, size: 20),
+                      const SizedBox(width: 8),
+                      Text(s.t('upToDate')),
+                    ]);
+                  } else if (u.state == UpdateState.failed && u.error != null) {
+                    status = Text(s.t('upd_${u.error}'), style: TextStyle(color: context.danger));
+                  }
+                  return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                    OutlinedButton.icon(
+                      icon: checking
+                          ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
+                          : const Icon(Icons.refresh_rounded),
+                      label: Text(s.t(checking ? 'checkingUpdates' : 'checkUpdates')),
+                      onPressed: checking ? null : () => u.check(arabic: store.lang == 'ar'),
+                    ),
+                    if (status != null) ...[const SizedBox(height: 10), status],
+                  ]);
+                },
               ),
             ]),
             section(s.t('theme'), [

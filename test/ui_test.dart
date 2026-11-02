@@ -6,10 +6,13 @@ import 'package:file_chat/core/auth.dart';
 import 'package:file_chat/core/models.dart';
 import 'package:file_chat/core/plan.dart';
 import 'package:file_chat/core/store.dart';
+import 'package:file_chat/core/updates.dart';
 import 'package:file_chat/main.dart';
 import 'package:file_chat/ui/account.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -84,6 +87,35 @@ void main() {
     expect(find.text('0 / ${Plan.freeDailyQuestions}'), findsOneWidget);
     expect(find.text('50 ميجابايت'), findsOneWidget);
     expect(find.text('يجب إيقافه'), findsOneWidget);
+  });
+
+  testWidgets('a new release shows a banner, settings can check again', (t) async {
+    var build = 30;
+    final dir = await t.runAsync(() => Directory.systemTemp.createTemp('fc'));
+    store = AppStore(await t.runAsync(SharedPreferences.getInstance) as SharedPreferences, dir!,
+        adBlockCheck: () async => false,
+        updates: Updater(
+          currentBuild: () async => 22,
+          client: MockClient((_) async => http.Response(
+              jsonEncode({'version': '1.5.0', 'build': build, 'url': 'https://example.com/a.apk'}), 200)),
+        ));
+    await pump(t);
+    await t.pumpAndSettle();
+    expect(find.text('تحديث جديد متاح · 1.5.0'), findsOneWidget, reason: '${store.updates.state} ${store.updates.error}');
+    await t.tap(find.text('تحديث الآن'));
+    await t.pumpAndSettle();
+    expect(find.text('الإصدار 1.5.0 جاهز'), findsOneWidget);
+    await t.tap(find.text('لاحقاً'));
+    await t.pumpAndSettle();
+
+    build = 22;
+    await t.tap(find.byTooltip('المحادثات'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('الإعدادات'));
+    await t.pumpAndSettle();
+    await t.tap(find.text('البحث عن تحديثات'));
+    await t.pumpAndSettle();
+    expect(find.text('لديك أحدث إصدار'), findsOneWidget);
   });
 
   testWidgets('an ad blocker on the free plan covers the app until it is off', (t) async {

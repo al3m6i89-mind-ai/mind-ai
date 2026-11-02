@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -14,6 +16,7 @@ import 'attachment_card.dart';
 import 'message_view.dart';
 import 'plans.dart';
 import 'settings.dart';
+import 'update_sheet.dart';
 import 'theme.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -30,14 +33,24 @@ class _HomeScreenState extends State<HomeScreen> {
   int _lastCount = 0;
   int _lastLen = 0;
 
+  StreamSubscription<void>? _updateTaps;
+
   @override
   void initState() {
     super.initState();
     _input.addListener(() => setState(() {}));
+    final store = context.read<AppStore>();
+    _updateTaps = store.updates.openRequests.stream.listen((_) async {
+      if (!mounted) return;
+      if (store.updates.latest == null) await store.updates.check(arabic: store.lang == 'ar');
+      if (mounted && store.updates.hasUpdate) showUpdateSheet(context, store.updates, s);
+    });
+    store.updates.start(arabic: store.lang == 'ar');
   }
 
   @override
   void dispose() {
+    _updateTaps?.cancel();
     _input.dispose();
     _scroll.dispose();
     super.dispose();
@@ -235,6 +248,7 @@ class _HomeScreenState extends State<HomeScreen> {
         top: false,
         child: Column(
           children: [
+            UpdateBanner(u: store.updates, s: s),
             Expanded(
               child: AnimatedSwitcher(
                 duration: const Duration(milliseconds: 260),

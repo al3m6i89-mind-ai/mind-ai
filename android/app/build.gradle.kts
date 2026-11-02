@@ -64,3 +64,8 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+dependencies {
+    // Checks for a newer release in the background and posts a phone notification.
+    implementation("androidx.work:work-runtime:2.10.1")
+}

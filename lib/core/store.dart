@@ -13,6 +13,7 @@ import 'ai.dart';
 import 'auth.dart';
 import 'extract.dart';
 import 'billing.dart';
+import 'updates.dart';
 import 'models.dart';
 import 'plan.dart';
 
@@ -28,7 +29,12 @@ class AttachRejected implements Exception {
 /// All app state. Conversations live as one JSON file each in the app's private
 /// folder; attached files are copied next to them.
 class AppStore extends ChangeNotifier {
-  AppStore(this._prefs, this._root, {Auth? auth, this.adBlockCheck = detectAdBlocker}) : auth = auth ?? Auth.disabled();
+  AppStore(this._prefs, this._root, {Auth? auth, this.adBlockCheck = detectAdBlocker, Updater? updates})
+      : auth = auth ?? Auth.disabled(),
+        updates = updates ?? Updater();
+
+  /// New releases: checked here and in the background, installed from inside the app.
+  final Updater updates;
 
   /// Google or phone sign-in (disabled until Firebase is set up for the build).
   final Auth auth;

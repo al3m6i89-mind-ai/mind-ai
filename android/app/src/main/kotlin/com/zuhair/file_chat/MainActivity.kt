@@ -1,6 +1,9 @@
 package com.zuhair.file_chat
 
 import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Build
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
@@ -21,6 +24,7 @@ class MainActivity : FlutterActivity() {
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        updatesChannel(flutterEngine)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "file_chat/adblock").setMethodCallHandler { call, result ->
             if (call.method != "scan") return@setMethodCallHandler result.notImplemented()
             result.success(
@@ -31,6 +35,65 @@ class MainActivity : FlutterActivity() {
                     "apps" to blockers.filter { installed(it) },
                 )
             )
+        }
+    }
+
+    private var openUpdate = false
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        openUpdate = intent?.getBooleanExtra("openUpdate", false) ?: false
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        if (intent.getBooleanExtra("openUpdate", false)) {
+            openUpdate = true
+            updates?.invokeMethod("openUpdate", null)
+        }
+    }
+
+    private var updates: MethodChannel? = null
+
+    private fun updatesChannel(engine: FlutterEngine) {
+        val ch = MethodChannel(engine.dartExecutor.binaryMessenger, "file_chat/updates")
+        updates = ch
+        ch.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "schedule" -> {
+                    safe { Updates.schedule(applicationContext, call.argument<String>("url")!!, call.argument<Boolean>("ar") ?: true) }
+                    result.success(null)
+                }
+                "notify" -> {
+                    safe {
+                        Updates.notifyOnce(
+                            applicationContext, call.argument<String>("version") ?: "",
+                            (call.argument<Number>("build") ?: 0).toLong(), call.argument<Boolean>("ar") ?: true
+                        )
+                    }
+                    result.success(null)
+                }
+                "askNotifications" -> {
+                    if (Build.VERSION.SDK_INT >= 33 &&
+                        checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED
+                    ) requestPermissions(arrayOf("android.permission.POST_NOTIFICATIONS"), 7002)
+                    result.success(null)
+                }
+                "canInstall" -> result.success(Build.VERSION.SDK_INT < 26 || packageManager.canRequestPackageInstalls())
+                "openInstallSettings" -> {
+                    safe {
+                        startActivity(
+                            Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES, Uri.parse("package:$packageName"))
+                        )
+                    }
+                    result.success(null)
+                }
+                "takeOpenUpdate" -> {
+                    result.success(openUpdate)
+                    openUpdate = false
+                }
+                else -> result.notImplemented()
+            }
         }
     }
 
