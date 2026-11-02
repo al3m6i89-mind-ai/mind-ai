@@ -1,5 +1,5 @@
 // node proxy/test.mjs — checks routing, auth and key injection with a stubbed fetch.
-import worker, { verifyIdToken, quotaCheck, _resetJwksForTest, Quota, subscriptionUntil, saveSub, premiumUntil, PRODUCT } from './src/index.js';
+import worker, { emailAllowed, verifyIdToken, quotaCheck, _resetJwksForTest, Quota, subscriptionUntil, saveSub, premiumUntil, PRODUCT } from './src/index.js';
 import { DatabaseSync } from 'node:sqlite';
 import assert from 'node:assert/strict';
 
@@ -82,7 +82,22 @@ const mid = t0.length - 20;
 const tampered = t0.slice(0, mid) + (t0[mid] === 'A' ? 'B' : 'A') + t0.slice(mid + 1);
 assert.equal(await verifyIdToken(tampered, project), null, 'bad signature');
 assert.equal(await verifyIdToken(await token({ firebase: { sign_in_provider: 'password' }, email_verified: false }), project), null, 'unconfirmed email');
-assert.ok(await verifyIdToken(await token({ firebase: { sign_in_provider: 'password' }, email_verified: true }), project));
+assert.ok(await verifyIdToken(await token({ firebase: { sign_in_provider: 'password' }, email_verified: true, email: 'ali@gmail.com' }), project));
+assert.equal(await verifyIdToken(await token({ firebase: { sign_in_provider: 'password' }, email_verified: true, email: 'x@mailinator.com' }), project), null,
+  'a throwaway mail service made through the sign-up API is refused');
+assert.equal(emailAllowed('ali+2@gmail.com'), false);
+assert.equal(emailAllowed('a.li@gmail.com'), false, 'Gmail dot variants');
+assert.equal(emailAllowed('a.li@hotmail.com'), true);
+assert.equal(emailAllowed('ALI@Outlook.com'), true);
+assert.equal(emailAllowed(''), false);
+assert.ok(await verifyIdToken(await token({ firebase: { sign_in_provider: 'google.com' }, email: 'a.b@company.com' }), project), 'Google accounts are not limited');
+
+// Path tricks do not reach other endpoints.
+for (const p of ['/g/v1beta/models/gemini..%2f..%2ftunedModels:generateContent', '/g/v1beta/tunedModels', '/g/v1beta/models/x:generateContent/extra',
+  '/q/v1/files', '/g/upload/v1beta/files/../../v1beta/cachedContents']) {
+  const res = await worker.fetch(req(p), env);
+  assert.ok([403, 404].includes(res.status), p + ' -> ' + res.status);
+}
 
 // ---------- Quota ----------
 const sqlOf = (db) => ({

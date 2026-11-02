@@ -117,12 +117,29 @@ export async function verifyIdToken(token, project, now = Date.now()) {
     const key = await crypto.subtle.importKey('jwk', jwk, { name: 'RSASSA-PKCS1-v1_5', hash: 'SHA-256' }, false, ['verify']);
     const ok = await crypto.subtle.verify('RSASSA-PKCS1-v1_5', key, b64url(sig), new TextEncoder().encode(`${h}.${p}`));
     if (!ok) return null;
-    // Email accounts count only once the address is confirmed.
-    if (claims.firebase?.sign_in_provider === 'password' && claims.email_verified !== true) return null;
+    // Email accounts count only once the address is confirmed, and only with the
+    // mail services the app allows (the app checks too, but Firebase's sign-up
+    // API can be called without the app).
+    if (claims.firebase?.sign_in_provider === 'password') {
+      if (claims.email_verified !== true || !emailAllowed(claims.email)) return null;
+    }
     return claims;
   } catch {
     return null;
   }
+}
+// Same list as Auth.emailDomains in the app.
+const EMAIL_DOMAINS = new Set(['gmail.com', 'googlemail.com', 'hotmail.com', 'outlook.com', 'live.com', 'msn.com',
+  'yahoo.com', 'icloud.com', 'me.com', 'hotmail.co.uk', 'outlook.sa', 'hotmail.fr']);
+/** One account per inbox: known mail services, no "+tag" aliases, and Gmail
+ * addresses in the app's form (no dots, which Gmail ignores). */
+export function emailAllowed(email) {
+  const m = /^([^@\s]+)@([^@\s]+)$/.exec(String(email || '').toLowerCase());
+  if (!m) return false;
+  const [, local, domain] = m;
+  if (!EMAIL_DOMAINS.has(domain) || local.includes('+')) return false;
+  if ((domain === 'gmail.com' || domain === 'googlemail.com') && local.includes('.')) return false;
+  return true;
 }
 export const _resetJwksForTest = () => (jwks = { keys: null, until: 0 });
 
