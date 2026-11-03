@@ -1,8 +1,8 @@
 {
-  "versionCode": 18,
-  "versionName": "1.7.6",
+  "versionCode": 19,
+  "versionName": "1.7.7",
   "apkUrl": "https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/builds/noor-almehrab/NoorAlmehrab.apk",
-  "releasedAt": 1793696601000,
-  "notes_ar": "• التحديثات الآن عبر GitHub مباشرةً",
-  "notes_en": "• Updates now served directly from GitHub"
+  "releasedAt": 1762156800000,
+  "notes_ar": "• تحسينات استقرار وتوافق",
+  "notes_en": "• Stability and compatibility improvements"
 }
