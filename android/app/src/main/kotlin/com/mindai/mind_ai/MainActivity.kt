@@ -2,6 +2,8 @@ package com.mindai.mind_ai
 
 import android.graphics.Bitmap
 import android.media.MediaMetadataRetriever
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -9,8 +11,11 @@ import java.io.ByteArrayOutputStream
 import kotlin.concurrent.thread
 
 class MainActivity : FlutterActivity() {
+    @OptIn(UnstableApi::class)
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+        // Reels: cover thumbnails and upload compression.
+        VideoTools(applicationContext, flutterEngine.dartExecutor.binaryMessenger)
         // Pulls evenly spaced frames out of a video so Dart can key out the
         // background and build a transparent animated gift.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "mindai/frames").setMethodCallHandler { call, result ->

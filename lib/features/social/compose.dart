@@ -8,6 +8,7 @@ import 'package:video_player/video_player.dart';
 import '../../app/theme.dart';
 import '../../services/social/social_service.dart';
 import '../../services/social/text_utils.dart';
+import '../../services/video_tools.dart';
 import '../../widgets/common.dart';
 import 'posts_view.dart';
 import 'stories.dart';
@@ -415,9 +416,14 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
   final _caption = TextEditingController();
   final _sound = TextEditingController();
   String? _path;
+
+  /// Cover the person picked; when empty, [_autoCover] (a frame from the video) is used.
   String _cover = '';
+  String _autoCover = '';
   VideoPlayerController? _video;
   bool _busy = false;
+
+  String get _effectiveCover => _cover.isNotEmpty ? _cover : _autoCover;
 
   @override
   void initState() {
@@ -460,7 +466,11 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
     setState(() {
       _video = c;
       _path = x.path;
+      _autoCover = '';
     });
+    // A cover from the video itself, so the reel never shows as a blank tile.
+    final thumb = await VideoTools.thumbnail(x.path);
+    if (mounted && _path == x.path && thumb != null) setState(() => _autoCover = thumb);
   }
 
   Future<void> _pickCover() async {
@@ -473,8 +483,12 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
     if (path == null) return;
     setState(() => _busy = true);
     _video?.pause();
+    final social = context.read<SocialService>();
+    String? light;
     try {
-      await context.read<SocialService>().createReel(videoPath: path, caption: _caption.text, sound: _sound.text, thumbPath: _cover);
+      // Smaller upload: 720p, ~2.5 Mbps, on the phone's video chip.
+      light = await VideoTools.compress(path);
+      await social.createReel(videoPath: light, caption: _caption.text, sound: _sound.text, thumbPath: _effectiveCover);
       if (mounted) {
         Navigator.pop(context);
         toast(context, 'نُشر الريل 🎬');
@@ -482,6 +496,12 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
     } catch (e) {
       if (mounted) toast(context, e);
     } finally {
+      // The compressed copy was copied or uploaded; the temporary file can go.
+      if (light != null && light != path) {
+        try {
+          File(light).deleteSync();
+        } catch (_) {}
+      }
       if (mounted) setState(() => _busy = false);
     }
   }
@@ -543,13 +563,22 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
               TextButton.icon(onPressed: () => _pick(camera: true), icon: const Icon(Icons.videocam_outlined), label: const Text('تصوير')),
               TextButton.icon(
                 onPressed: _pickCover,
-                icon: _cover.isEmpty
+                icon: _effectiveCover.isEmpty
                     ? const Icon(Icons.image_outlined)
-                    : ClipRRect(borderRadius: BorderRadius.circular(4), child: MediaImage(_cover, width: 22, height: 22)),
-                label: const Text('صورة الغلاف'),
+                    : ClipRRect(borderRadius: BorderRadius.circular(4), child: MediaImage(_effectiveCover, width: 22, height: 22)),
+                label: Text(_cover.isEmpty ? 'تغيير الغلاف' : 'غلافك'),
               ),
             ],
           ),
+          if (_path != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Text(
+                'الحجم ${VideoTools.size(_path!)} · سيُضغط قبل الرفع إلى 720p ليصل أسرع ويوفّر باقتك',
+                textAlign: TextAlign.center,
+                style: const TextStyle(color: MindColors.muted, fontSize: 12),
+              ),
+            ),
           const SizedBox(height: 8),
           TextField(
             controller: _caption,
@@ -567,7 +596,15 @@ class _CreateReelScreenState extends State<CreateReelScreen> {
             ),
           ),
           const SizedBox(height: 20),
-          GradientButton(label: 'نشر الريل', icon: Icons.send_rounded, loading: _busy, onPressed: _path == null ? null : _share),
+          ValueListenableBuilder<double?>(
+            valueListenable: VideoTools.progress,
+            builder: (_, p, _) => GradientButton(
+              label: p != null ? 'جارٍ ضغط الفيديو ${(p * 100).round()}%' : (_busy ? 'جارٍ النشر…' : 'نشر الريل'),
+              icon: Icons.send_rounded,
+              loading: _busy,
+              onPressed: _path == null ? null : _share,
+            ),
+          ),
         ],
       ),
     );
