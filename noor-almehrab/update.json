@@ -1,8 +1,8 @@
 {
-  "versionCode": 17,
-  "versionName": "1.7.5",
+  "versionCode": 18,
+  "versionName": "1.7.6",
   "apkUrl": "https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/builds/noor-almehrab/NoorAlmehrab.apk",
-  "releasedAt": 1793694300000,
-  "notes_ar": "• نافذة موافقة على الإعلانات المخصصة\n• دعم Android 15 — targetSdk 35\n• تحسينات توافق Google Play",
-  "notes_en": "• Personalised ad consent dialog\n• Android 15 support — targetSdk 35\n• Google Play compliance improvements"
+  "releasedAt": 1793696601000,
+  "notes_ar": "• التحديثات الآن عبر GitHub مباشرةً",
+  "notes_en": "• Updates now served directly from GitHub"
 }
