@@ -218,7 +218,7 @@ void main() {
         s.report(ReportTarget.post, photo.id, authorId: a.id, reason: ReportReason.spam),
         throwsArgumentError,
       );
-      for (final h in ['r1', 'r2', 'r3']) {
+      for (final h in ['rep1', 'rep2', 'rep3']) {
         await s.createAccount(name: h, handle: h);
         expect(photo.hidden, isFalse);
         await s.report(ReportTarget.post, photo.id, authorId: a.id, reason: ReportReason.spam, note: 'x');
