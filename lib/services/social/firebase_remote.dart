@@ -104,6 +104,17 @@ class FirebaseSocialRemote implements SocialRemote {
   }
 
   @override
+  Future<bool> isAdmin() async {
+    final uid = authUid;
+    if (uid == null) return false;
+    try {
+      return (await _db.collection('admins').doc(uid).get()).exists;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  @override
   Future<String?> linkedId() async {
     final uid = authUid;
     if (uid == null) return null;
@@ -144,7 +155,7 @@ class FirebaseSocialRemote implements SocialRemote {
   // ------------------------------------------------------------ live data
 
   @override
-  void listen(String meId, void Function(String collection, List<Map<String, dynamic>> docs) onDocs) {
+  void listen(String meId, void Function(String collection, List<Map<String, dynamic>> docs) onDocs, {bool admin = false}) {
     stop();
     void on(String name, Query<Map<String, dynamic>> q) {
       _subs.add(
@@ -165,6 +176,7 @@ class FirebaseSocialRemote implements SocialRemote {
     on('notices', _db.collection('notices').where('toId', isEqualTo: meId).limit(500));
     on('chats', _db.collection('chats').where('members', arrayContains: meId));
     on('messages', _db.collection('messages').where('members', arrayContains: meId).limit(3000));
+    if (admin) on('reports', _db.collection('reports').orderBy('createdAt', descending: true).limit(500));
     _registerPush(meId);
   }
 

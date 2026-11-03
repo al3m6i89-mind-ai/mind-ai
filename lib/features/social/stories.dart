@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../../services/social/social_service.dart';
 import '../../services/social/text_utils.dart';
 import 'photos_view.dart';
+import 'report_sheet.dart';
 import 'widgets.dart';
 
 /// Row of story circles: you first (tap + to add), then people with stories.
@@ -313,6 +314,16 @@ class _StoryViewerState extends State<StoryViewer> with SingleTickerProviderStat
                                   setState(() => _story = 0);
                                   _show();
                                 }
+                              },
+                            ),
+                          if (!mine)
+                            IconButton(
+                              icon: const Icon(Icons.flag_outlined, color: Colors.white),
+                              tooltip: 'إبلاغ',
+                              onPressed: () async {
+                                _timer.stop();
+                                await showReportSheet(context, target: ReportTarget.story, targetId: s.id, authorId: uid);
+                                if (mounted) _timer.forward();
                               },
                             ),
                           IconButton(

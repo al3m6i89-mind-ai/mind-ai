@@ -2,7 +2,7 @@
 // written to /notices (a like, comment, follow, message...). Device tokens
 // live in /tokens, which only this server code can read.
 const { setGlobalOptions } = require("firebase-functions/v2");
-const { onDocumentWritten } = require("firebase-functions/v2/firestore");
+const { onDocumentWritten, onDocumentCreated } = require("firebase-functions/v2/firestore");
 const { initializeApp } = require("firebase-admin/app");
 const { getFirestore } = require("firebase-admin/firestore");
 const { getMessaging } = require("firebase-admin/messaging");
@@ -83,4 +83,53 @@ exports.pushNotice = onDocumentWritten("notices/{noticeId}", async (event) => {
     }
   });
   await Promise.all(dead);
+});
+
+// ---------------------------------------------------------------- reports
+
+const AUTO_HIDE_AT = 3;
+const REASONS = {
+  spam: "سبام", nudity: "محتوى جنسي", violence: "عنف", harassment: "تنمّر",
+  hate: "كراهية", falseInfo: "تضليل", scam: "احتيال", selfHarm: "إيذاء النفس",
+  copyright: "حقوق ملكية", impersonation: "انتحال", other: "سبب آخر",
+};
+
+// A new report: hide the item once enough different people report it, and
+// tell the moderators.
+exports.onReport = onDocumentCreated("reports/{reportId}", async (event) => {
+  const r = event.data && event.data.data();
+  if (!r) return;
+
+  const open = await db.collection("reports")
+    .where("targetId", "==", r.targetId)
+    .where("status", "==", "open")
+    .get();
+  const count = open.docs.filter((d) => d.data().targetType === r.targetType).length;
+
+  let hidden = false;
+  if (count >= AUTO_HIDE_AT && (r.targetType === "post" || r.targetType === "comment")) {
+    const ref = db.collection(r.targetType === "post" ? "posts" : "comments").doc(r.targetId);
+    const doc = await ref.get();
+    if (doc.exists && !doc.data().hidden) {
+      await ref.update({ hidden: true });
+      hidden = true;
+    }
+  }
+
+  const admins = await db.collection("admins").get();
+  const uids = admins.docs.map((d) => d.id).slice(0, 30);
+  if (!uids.length) return;
+  const tokenSnap = await db.collection("tokens").where("authUid", "in", uids).get();
+  const tokens = tokenSnap.docs.map((d) => d.id);
+  if (!tokens.length) return;
+  const kind = { post: "منشور", comment: "تعليق", story: "قصة", user: "حساب" }[r.targetType] || "محتوى";
+  await getMessaging().sendEachForMulticast({
+    tokens,
+    notification: {
+      title: hidden ? `🚩 أُخفي ${kind} تلقائياً (${count} بلاغات)` : `🚩 بلاغ جديد عن ${kind}`,
+      body: `${REASONS[r.reason] || r.reason}${r.note ? ": " + String(r.note).slice(0, 100) : ""}`,
+    },
+    data: { type: "report", targetType: String(r.targetType), targetId: String(r.targetId) },
+    android: { priority: "high", notification: { tag: `report_${r.targetType}_${r.targetId}` } },
+  });
 });

@@ -8,6 +8,8 @@ import '../../services/social/social_id.dart';
 import '../../services/social/social_service.dart';
 import '../../services/social/text_utils.dart';
 import 'messages_screen.dart';
+import 'moderation_screen.dart';
+import 'report_sheet.dart';
 import 'onboarding.dart';
 import 'photos_view.dart';
 import 'posts_view.dart';
@@ -122,6 +124,18 @@ class ProfileScreen extends StatelessWidget {
                 Navigator.of(context).push(MaterialPageRoute(builder: (_) => const EditProfileScreen()));
               },
             ),
+            if (social.isAdmin)
+              ListTile(
+                leading: const Icon(Icons.shield_outlined, color: MindColors.violet),
+                title: const Text('لوحة الإشراف'),
+                trailing: social.openReports > 0
+                    ? Badge(label: Text('${social.openReports}'))
+                    : null,
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ModerationScreen()));
+                },
+              ),
             ListTile(
               leading: const Icon(Icons.favorite_border),
               title: const Text('ما أعجبني'),
@@ -185,6 +199,33 @@ class ProfileScreen extends StatelessWidget {
                 copyId(context, u.id);
               },
             ),
+            ListTile(
+              leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
+              title: const Text('الإبلاغ عن الحساب', style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                Navigator.pop(ctx);
+                showReportSheet(context, target: ReportTarget.user, targetId: u.id, authorId: u.id);
+              },
+            ),
+            if (social.isAdmin) ...[
+              const Divider(),
+              ListTile(
+                leading: Icon(u.suspended ? Icons.lock_open_rounded : Icons.gavel_rounded, color: Colors.redAccent),
+                title: Text(u.suspended ? 'رفع الإيقاف (إشراف)' : 'إيقاف الحساب (إشراف)'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  social.setSuspended(u.id, !u.suspended);
+                },
+              ),
+              ListTile(
+                leading: const Icon(Icons.verified, color: Color(0xFF1D9BF0)),
+                title: Text(u.verified ? 'إزالة التوثيق (إشراف)' : 'توثيق الحساب (إشراف)'),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  social.setVerified(u.id, !u.verified);
+                },
+              ),
+            ],
             ListTile(
               leading: const Icon(Icons.block, color: Colors.redAccent),
               title: Text(social.isBlocked(u.id) ? 'إلغاء الحظر' : 'حظر', style: const TextStyle(color: Colors.redAccent)),
@@ -255,6 +296,16 @@ class _Header extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           IdChip(u.id),
+          if (u.suspended)
+            Container(
+              margin: const EdgeInsets.only(top: 8),
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(color: Colors.redAccent.withValues(alpha: 0.1), borderRadius: BorderRadius.circular(12)),
+              child: Text(
+                mine ? '⛔ حسابك موقوف من الإشراف: محتواك مخفي ولا يمكنك النشر أو التفاعل.' : '⛔ هذا الحساب موقوف لمخالفة الإرشادات.',
+                style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w700),
+              ),
+            ),
           if (u.bio.isNotEmpty) ...[const SizedBox(height: 8), RichPostText(u.bio)],
           if (u.link.isNotEmpty)
             GestureDetector(

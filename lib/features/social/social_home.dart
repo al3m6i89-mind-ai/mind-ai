@@ -6,6 +6,7 @@ import '../../app/theme.dart';
 import '../../services/social/social_service.dart';
 import 'compose.dart';
 import 'messages_screen.dart';
+import 'moderation_screen.dart';
 import 'notifications_screen.dart';
 import 'onboarding.dart';
 import 'photos_view.dart';
@@ -73,6 +74,12 @@ class _SocialHomeState extends State<SocialHome> {
                 tooltip: 'الرسائل',
                 onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const InboxScreen())),
               ),
+              if (social.isAdmin && social.openReports > 0)
+                IconButton(
+                  icon: badge(const Icon(Icons.shield_outlined), social.openReports),
+                  tooltip: 'لوحة الإشراف',
+                  onPressed: () => Navigator.of(context).push(MaterialPageRoute(builder: (_) => const ModerationScreen())),
+                ),
               IconButton(icon: const Icon(Icons.add_box_outlined), tooltip: 'إنشاء', onPressed: () => openCreate(context)),
               Padding(
                 padding: const EdgeInsetsDirectional.only(end: 10, start: 2),

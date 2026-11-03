@@ -211,6 +211,48 @@ void main() {
       expect(r.posts[PostKind.post]!.length, 2);
     });
 
+    test('reports: one per person, auto-hide at 3, moderator actions', () async {
+      final a = await s.createAccount(name: 'أ', handle: 'aaa');
+      final photo = await s.createPhoto(paths: ['/x.jpg'], caption: 'hi');
+      await expectLater(
+        s.report(ReportTarget.post, photo.id, authorId: a.id, reason: ReportReason.spam),
+        throwsArgumentError,
+      );
+      for (final h in ['r1', 'r2', 'r3']) {
+        await s.createAccount(name: h, handle: h);
+        expect(photo.hidden, isFalse);
+        await s.report(ReportTarget.post, photo.id, authorId: a.id, reason: ReportReason.spam, note: 'x');
+        expect(s.reported(ReportTarget.post, photo.id), isTrue);
+      }
+      expect(photo.hidden, isTrue);
+      // The same person can't report twice.
+      await expectLater(
+        s.report(ReportTarget.post, photo.id, authorId: a.id, reason: ReportReason.hate),
+        throwsArgumentError,
+      );
+      final cases = s.reportCases();
+      expect(cases.length, 1);
+      expect(cases.first.reports.length, 3);
+      expect(cases.first.reasons.first, (ReportReason.spam, 3));
+
+      await s.dismissReports(cases.first);
+      expect(photo.hidden, isFalse);
+      expect(s.reportCases(), isEmpty);
+      expect(s.reportCases(open: false).length, 1);
+    });
+
+    test('a suspended account cannot post, and a removed post is gone', () async {
+      final a = await s.createAccount(name: 'أ', handle: 'aaa');
+      final post = await s.createPost(text: 'سيُحذف');
+      await s.createAccount(name: 'ب', handle: 'bbb');
+      await s.report(ReportTarget.post, post.id, authorId: a.id, reason: ReportReason.scam);
+      await s.removeReported(s.reportCases().first);
+      expect(s.post(post.id), isNull);
+      await s.setSuspended(a.id, true);
+      await s.switchAccount(a.id);
+      await expectLater(s.createPost(text: 'x'), throwsArgumentError);
+    });
+
     test('ranking favours fresh engagement', () {
       final fresh = SocialService.rank(likes: 10, comments: 2, reposts: 0, saves: 0, views: 100, ageHours: 1);
       final old = SocialService.rank(likes: 10, comments: 2, reposts: 0, saves: 0, views: 100, ageHours: 48);

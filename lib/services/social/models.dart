@@ -35,6 +35,7 @@ class SocialUser {
     this.avatar = '',
     this.link = '',
     this.verified = false,
+    this.suspended = false,
     this.private = false,
     this.local = false,
     Set<String>? following,
@@ -56,6 +57,9 @@ class SocialUser {
   String avatar;
   String link;
   bool verified;
+
+  /// Stopped by a moderator: their content is hidden and they can't post.
+  bool suspended;
   bool private;
 
   /// Created on this phone (can be switched to).
@@ -73,6 +77,7 @@ class SocialUser {
     'avatar': avatar,
     'link': link,
     'verified': verified,
+    'suspended': suspended,
     'private': private,
     'local': local,
     'following': following.toList(),
@@ -89,6 +94,7 @@ class SocialUser {
     avatar: j['avatar'] as String? ?? '',
     link: j['link'] as String? ?? '',
     verified: j['verified'] as bool? ?? false,
+    suspended: j['suspended'] as bool? ?? false,
     private: j['private'] as bool? ?? false,
     local: j['local'] as bool? ?? false,
     following: _set(j['following']),
@@ -127,6 +133,7 @@ class SocialPost {
     this.quoteOf,
     this.repostOf,
     this.commentsOff = false,
+    this.hidden = false,
     this.views = 0,
     this.shares = 0,
     Set<String>? likes,
@@ -156,6 +163,9 @@ class SocialPost {
   /// A plain repost (no text) of another post. Shown as that post.
   final String? repostOf;
   bool commentsOff;
+
+  /// Hidden pending review (enough reports, or a moderator).
+  bool hidden;
   int views;
   int shares;
   final Set<String> likes;
@@ -177,6 +187,7 @@ class SocialPost {
     'quoteOf': quoteOf,
     'repostOf': repostOf,
     'commentsOff': commentsOff,
+    'hidden': hidden,
     'views': views,
     'shares': shares,
     'likes': likes.toList(),
@@ -197,6 +208,7 @@ class SocialPost {
     quoteOf: j['quoteOf'] as String?,
     repostOf: j['repostOf'] as String?,
     commentsOff: j['commentsOff'] as bool? ?? false,
+    hidden: j['hidden'] as bool? ?? false,
     views: j['views'] as int? ?? 0,
     shares: j['shares'] as int? ?? 0,
     likes: _set(j['likes']),
@@ -214,6 +226,7 @@ class Comment {
     required this.text,
     required this.createdAt,
     this.parentId,
+    this.hidden = false,
     Set<String>? likes,
   }) : likes = likes ?? {};
 
@@ -225,6 +238,9 @@ class Comment {
 
   /// Set when this is an answer to another comment.
   final String? parentId;
+
+  /// Hidden pending review.
+  bool hidden;
   final Set<String> likes;
 
   Map<String, dynamic> toJson() => {
@@ -234,6 +250,7 @@ class Comment {
     'text': text,
     'createdAt': createdAt.toUtc().toIso8601String(),
     'parentId': parentId,
+    'hidden': hidden,
     'likes': likes.toList(),
   };
 
@@ -244,6 +261,7 @@ class Comment {
     text: j['text'] as String,
     createdAt: DateTime.parse(j['createdAt'] as String).toLocal(),
     parentId: j['parentId'] as String?,
+    hidden: j['hidden'] as bool? ?? false,
     likes: _set(j['likes']),
   );
 }
@@ -400,4 +418,115 @@ class Chat {
       ...?(j['readAt'] as Map<String, dynamic>?)?.map((k, v) => MapEntry(k, DateTime.parse(v as String).toLocal())),
     },
   );
+}
+
+// ---------------------------------------------------------------- reports
+
+enum ReportTarget { post, comment, story, user }
+
+extension ReportTargetInfo on ReportTarget {
+  String get label => switch (this) {
+    ReportTarget.post => 'منشور',
+    ReportTarget.comment => 'تعليق',
+    ReportTarget.story => 'قصة',
+    ReportTarget.user => 'حساب',
+  };
+}
+
+enum ReportReason { spam, nudity, violence, harassment, hate, falseInfo, scam, selfHarm, copyright, impersonation, other }
+
+extension ReportReasonInfo on ReportReason {
+  String get label => switch (this) {
+    ReportReason.spam => 'إزعاج أو محتوى مكرر (سبام)',
+    ReportReason.nudity => 'عُري أو محتوى جنسي',
+    ReportReason.violence => 'عنف أو تهديد',
+    ReportReason.harassment => 'تنمّر أو مضايقة',
+    ReportReason.hate => 'خطاب كراهية',
+    ReportReason.falseInfo => 'معلومات مضلِّلة',
+    ReportReason.scam => 'احتيال أو نصب',
+    ReportReason.selfHarm => 'إيذاء النفس',
+    ReportReason.copyright => 'انتهاك حقوق ملكية',
+    ReportReason.impersonation => 'انتحال شخصية',
+    ReportReason.other => 'سبب آخر',
+  };
+}
+
+enum ReportStatus { open, removed, dismissed }
+
+class Report {
+  Report({
+    required this.reporterId,
+    required this.target,
+    required this.targetId,
+    required this.targetAuthorId,
+    required this.reason,
+    required this.createdAt,
+    this.note = '',
+    this.status = ReportStatus.open,
+    this.handledBy,
+  });
+
+  /// One report per person per item: the ID says who reported what.
+  static String idFor(String reporterId, ReportTarget target, String targetId) => '${reporterId}_${target.name}_$targetId';
+  String get id => idFor(reporterId, target, targetId);
+
+  final String reporterId;
+  final ReportTarget target;
+  final String targetId;
+
+  /// Who wrote the reported item (the account itself for a user report).
+  final String targetAuthorId;
+  final ReportReason reason;
+  final String note;
+  final DateTime createdAt;
+  ReportStatus status;
+  String? handledBy;
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'reporterId': reporterId,
+    'targetType': target.name,
+    'targetId': targetId,
+    'targetAuthorId': targetAuthorId,
+    'reason': reason.name,
+    'note': note,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'status': status.name,
+    'handledBy': handledBy,
+  };
+
+  factory Report.fromJson(Map<String, dynamic> j) => Report(
+    reporterId: j['reporterId'] as String,
+    target: ReportTarget.values.byName(j['targetType'] as String),
+    targetId: j['targetId'] as String,
+    targetAuthorId: j['targetAuthorId'] as String? ?? '',
+    reason: ReportReason.values.asNameMap()[j['reason']] ?? ReportReason.other,
+    note: j['note'] as String? ?? '',
+    createdAt: DateTime.parse(j['createdAt'] as String).toLocal(),
+    status: ReportStatus.values.asNameMap()[j['status']] ?? ReportStatus.open,
+    handledBy: j['handledBy'] as String?,
+  );
+}
+
+/// All reports about one item, as a moderator sees them.
+class ReportCase {
+  ReportCase(this.target, this.targetId, this.reports);
+  final ReportTarget target;
+  final String targetId;
+  final List<Report> reports;
+
+  String get key => '${target.name}:$targetId';
+  String get authorId => reports.first.targetAuthorId;
+  DateTime get latest => reports.map((r) => r.createdAt).reduce((a, b) => a.isAfter(b) ? a : b);
+  bool get open => reports.any((r) => r.status == ReportStatus.open);
+
+  /// Reasons with how many people chose each, most common first.
+  List<(ReportReason, int)> get reasons {
+    final m = <ReportReason, int>{};
+    for (final r in reports) {
+      m[r.reason] = (m[r.reason] ?? 0) + 1;
+    }
+    final l = m.entries.toList()..sort((a, b) => b.value.compareTo(a.value));
+    return [for (final e in l) (e.key, e.value)];
+  }
 }

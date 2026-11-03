@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../services/social/social_service.dart';
 import '../../services/social/text_utils.dart';
 import 'messages_screen.dart';
+import 'report_sheet.dart';
 import 'share_sheet.dart';
 import 'widgets.dart';
 
@@ -65,6 +66,13 @@ Future<void> showPostMenu(BuildContext context, SocialPost post) {
                 leading: const Icon(Icons.mail_outline),
                 title: const Text('مراسلة'),
                 onTap: () => close(() => openChat(context, author.id)),
+              ),
+              ListTile(
+                leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
+                title: Text('إبلاغ عن ${post.kind.single}', style: const TextStyle(color: Colors.redAccent)),
+                onTap: () => close(
+                  () => showReportSheet(context, target: ReportTarget.post, targetId: post.id, authorId: post.authorId),
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.block, color: Colors.redAccent),

@@ -154,6 +154,7 @@ class _PhotoCardState extends State<PhotoCard> {
             ],
           ),
         ),
+        if (p.hidden) const Padding(padding: EdgeInsets.symmetric(horizontal: 12), child: HiddenNote()),
         GestureDetector(
           onDoubleTap: _doubleTap,
           child: AspectRatio(

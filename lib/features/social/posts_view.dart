@@ -195,6 +195,7 @@ class PostCard extends StatelessWidget {
             ),
           ],
         ),
+        if (p.hidden) const HiddenNote(),
         if (parentAuthor != null && !focused)
           Padding(
             padding: const EdgeInsets.only(top: 2),

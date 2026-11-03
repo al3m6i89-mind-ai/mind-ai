@@ -186,6 +186,10 @@ class SocialService extends ChangeNotifier {
         final c = Chat.fromJson(e as Map<String, dynamic>);
         _chats[c.key] = c;
       }
+      for (final e in data['reports'] as List? ?? const []) {
+        final r = Report.fromJson(e as Map<String, dynamic>);
+        _reports[r.id] = r;
+      }
       final me = data['me'] as String?;
       _meId = me != null && _users.containsKey(me) ? me : null;
       // Stories older than a day are gone.
@@ -207,7 +211,9 @@ class SocialService extends ChangeNotifier {
     } catch (e) {
       lastError = '$e';
     }
-    if (_meId != null) r.listen(_meId!, _apply);
+    if (_meId == null) return;
+    _admin = await r.isAdmin();
+    r.listen(_meId!, _apply, admin: _admin);
   }
 
   void _apply(String collection, List<Map<String, dynamic>> docs) {
@@ -239,6 +245,10 @@ class SocialService extends ChangeNotifier {
       case 'messages':
         _messageDocs = docs;
         _rebuildChats();
+      case 'reports':
+        _reports
+          ..clear()
+          ..addEntries(docs.map(Report.fromJson).map((r) => MapEntry(r.id, r)));
     }
     notifyListeners();
   }
@@ -306,6 +316,8 @@ class SocialService extends ChangeNotifier {
     _chats.clear();
     _chatDocs = [];
     _messageDocs = [];
+    _reports.clear();
+    _admin = false;
     notifyListeners();
   }
 
@@ -320,6 +332,7 @@ class SocialService extends ChangeNotifier {
     'stories': _stories.values.map((s) => s.toJson()).toList(),
     'notices': _notices.map((n) => n.toJson()).toList(),
     'chats': _chats.values.map((c) => c.toJson()).toList(),
+      'reports': _reports.values.map((r) => r.toJson()).toList(),
     });
   }
 
@@ -503,9 +516,11 @@ class SocialService extends ChangeNotifier {
 
   bool _visible(SocialPost p) {
     final m = me;
-    if (m == null) return true;
+    if (m == null) return !p.hidden;
     final author = _users[p.authorId];
     if (author == null || m.blocked.contains(p.authorId) || author.blocked.contains(m.id)) return false;
+    // Hidden for review, or from a suspended account: only its writer and moderators see it.
+    if ((p.hidden || author.suspended) && p.authorId != m.id && !isAdmin) return false;
     // A private account shows its content only to followers.
     return !author.private || author.id == m.id || m.following.contains(author.id);
   }
@@ -772,6 +787,7 @@ class SocialService extends ChangeNotifier {
 
   String _mustMe() {
     if (!hasAccount) throw StateError('أنشئ حسابك أولاً');
+    if (me!.suspended) throw ArgumentError('حسابك موقوف من الإشراف، لا يمكنك النشر أو التفاعل');
     return meId;
   }
 
@@ -795,7 +811,11 @@ class SocialService extends ChangeNotifier {
       _comments.values.where((c) => c.parentId == commentId && _commentVisible(c)).toList()
         ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-  bool _commentVisible(Comment c) => !(me?.blocked.contains(c.authorId) ?? false) && _users.containsKey(c.authorId);
+  bool _commentVisible(Comment c) {
+    final author = _users[c.authorId];
+    if (author == null || (me?.blocked.contains(c.authorId) ?? false)) return false;
+    return !(c.hidden || author.suspended) || c.authorId == meId || isAdmin;
+  }
 
   Future<Comment> addComment(String postId, String text, {String? parentId}) async {
     final p = _posts[postId];
@@ -999,6 +1019,159 @@ class SocialService extends ChangeNotifier {
     await _changed();
   }
 
+  // ======================================================== reports & moderation
+
+  bool _admin = false;
+  final Map<String, Report> _reports = {};
+  final Set<String> _myReports = {};
+
+  /// Reports from different people that hide an item until a moderator looks.
+  static const autoHideAt = 3;
+
+  /// Moderators are set in the Firebase console (/admins/{authUid}). On the
+  /// phone-only mode the owner of the phone moderates.
+  bool get isAdmin => online ? _admin : hasAccount;
+
+  bool reported(ReportTarget target, String targetId) => _myReports.contains(Report.idFor(meId, target, targetId));
+
+  Future<void> report(ReportTarget target, String targetId, {required String authorId, required ReportReason reason, String note = ''}) async {
+    if (authorId == meId) throw ArgumentError('لا يمكنك الإبلاغ عن محتواك');
+    final r = Report(
+      reporterId: _mustMe(),
+      target: target,
+      targetId: targetId,
+      targetAuthorId: authorId,
+      reason: reason,
+      note: note.trim().length > 500 ? note.trim().substring(0, 500) : note.trim(),
+      createdAt: now,
+    );
+    if (_myReports.contains(r.id) || _reports.containsKey(r.id)) throw ArgumentError('سبق أن أبلغت عن هذا، وهو قيد المراجعة');
+    if (online) {
+      try {
+        await remote!.put('reports', r.id, r.toJson());
+      } catch (_) {
+        // The rules allow one report per person per item.
+        throw ArgumentError('تعذّر إرسال البلاغ، ربما أبلغت عنه من قبل');
+      }
+    } else {
+      _reports[r.id] = r;
+      // On the server this is done by the pushReport function.
+      final count = _reports.values.where((x) => x.target == target && x.targetId == targetId && x.status == ReportStatus.open).length;
+      if (count >= autoHideAt) {
+        if (target == ReportTarget.post) _posts[targetId]?.hidden = true;
+        if (target == ReportTarget.comment) _comments[targetId]?.hidden = true;
+      }
+    }
+    _myReports.add(r.id);
+    await _changed();
+  }
+
+  /// Reports grouped by item, newest first.
+  List<ReportCase> reportCases({bool open = true}) {
+    final groups = <String, List<Report>>{};
+    for (final r in _reports.values) {
+      groups.putIfAbsent('${r.target.name}:${r.targetId}', () => []).add(r);
+    }
+    final cases = [
+      for (final g in groups.values) ReportCase(g.first.target, g.first.targetId, g..sort((a, b) => b.createdAt.compareTo(a.createdAt))),
+    ].where((c) => c.open == open).toList()
+      ..sort((a, b) {
+        // Most-reported first among open cases.
+        final byCount = open ? b.reports.length.compareTo(a.reports.length) : 0;
+        return byCount != 0 ? byCount : b.latest.compareTo(a.latest);
+      });
+    return cases;
+  }
+
+  int get openReports => reportCases().length;
+
+  Comment? comment(String id) => _comments[id];
+  Story? story(String id) => _stories[id];
+
+  void _mustAdmin() {
+    if (!isAdmin) throw StateError('للمشرفين فقط');
+  }
+
+  Future<void> _closeCase(ReportCase c, ReportStatus status) async {
+    for (final r in c.reports.where((r) => r.status == ReportStatus.open)) {
+      r
+        ..status = status
+        ..handledBy = meId;
+      _send((x) => x.patch('reports', r.id, {
+        'status': status.name,
+        'handledBy': meId,
+        'handledAt': now.toUtc().toIso8601String(),
+      }));
+    }
+    await _changed();
+  }
+
+  /// Deletes the reported item for everyone.
+  Future<void> removeReported(ReportCase c) async {
+    _mustAdmin();
+    switch (c.target) {
+      case ReportTarget.post:
+        for (final x in _comments.values.where((x) => x.postId == c.targetId).toList()) {
+          _comments.remove(x.id);
+          if (online) await remote!.delete('comments', x.id);
+        }
+        _posts.remove(c.targetId);
+        _posts.removeWhere((_, x) => x.repostOf == c.targetId);
+        if (online) await remote!.delete('posts', c.targetId);
+      case ReportTarget.comment:
+        _comments.remove(c.targetId);
+        if (online) await remote!.delete('comments', c.targetId);
+      case ReportTarget.story:
+        _stories.remove(c.targetId);
+        if (online) await remote!.delete('stories', c.targetId);
+      case ReportTarget.user:
+        await setSuspended(c.targetId, true);
+    }
+    await _closeCase(c, ReportStatus.removed);
+  }
+
+  /// The reports were wrong: close them and show the item again.
+  Future<void> dismissReports(ReportCase c) async {
+    _mustAdmin();
+    if (c.target == ReportTarget.post && (_posts[c.targetId]?.hidden ?? false)) {
+      _posts[c.targetId]!.hidden = false;
+      _send((r) => r.patch('posts', c.targetId, {'hidden': false}));
+    }
+    if (c.target == ReportTarget.comment && (_comments[c.targetId]?.hidden ?? false)) {
+      _comments[c.targetId]!.hidden = false;
+      _send((r) => r.patch('comments', c.targetId, {'hidden': false}));
+    }
+    await _closeCase(c, ReportStatus.dismissed);
+  }
+
+  /// Hides or shows a post or comment without deleting it.
+  Future<void> setHidden(ReportCase c, bool hidden) async {
+    _mustAdmin();
+    if (c.target == ReportTarget.post) {
+      _posts[c.targetId]?.hidden = hidden;
+      _send((r) => r.patch('posts', c.targetId, {'hidden': hidden}));
+    } else if (c.target == ReportTarget.comment) {
+      _comments[c.targetId]?.hidden = hidden;
+      _send((r) => r.patch('comments', c.targetId, {'hidden': hidden}));
+    }
+    await _changed();
+  }
+
+  Future<void> setSuspended(String uid, bool suspended) async {
+    _mustAdmin();
+    if (uid == meId) throw ArgumentError('لا يمكنك إيقاف حسابك');
+    _users[uid]?.suspended = suspended;
+    _send((r) => r.patch('users', uid, {'suspended': suspended}));
+    await _changed();
+  }
+
+  Future<void> setVerified(String uid, bool verified) async {
+    _mustAdmin();
+    _users[uid]?.verified = verified;
+    _send((r) => r.patch('users', uid, {'verified': verified}));
+    await _changed();
+  }
+
   // ======================================================== search & trends
 
   SearchResults search(String query) {
@@ -1010,6 +1183,7 @@ class SocialService extends ChangeNotifier {
     final users = _users.values.where((u) {
       if (m != null && u.blocked.contains(m.id)) return false;
       final h = lower.startsWith('@') ? lower.substring(1) : lower;
+      if (u.suspended && !isAdmin) return false;
       return u.handle.contains(h) || u.name.toLowerCase().contains(lower) || u.id == exact?.id;
     }).toList()
       ..sort((a, b) {

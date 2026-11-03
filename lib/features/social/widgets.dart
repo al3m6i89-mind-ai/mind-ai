@@ -587,3 +587,19 @@ class _AuthorPagerState extends State<AuthorPager> {
     );
   }
 }
+
+/// Shown to the writer (and moderators) on content hidden for review.
+class HiddenNote extends StatelessWidget {
+  const HiddenNote({super.key});
+
+  @override
+  Widget build(BuildContext context) => Container(
+    margin: const EdgeInsets.symmetric(vertical: 4),
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(color: Colors.orange.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(8)),
+    child: const Text(
+      '🚩 مخفي عن الآخرين بانتظار مراجعة الإشراف',
+      style: TextStyle(color: Colors.orange, fontSize: 12, fontWeight: FontWeight.w700),
+    ),
+  );
+}

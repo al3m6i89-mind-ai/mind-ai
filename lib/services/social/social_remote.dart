@@ -27,7 +27,12 @@ abstract class SocialRemote {
   // ---- live data
   /// Delivers every document of a collection each time it changes. Collections:
   /// users, posts, comments, stories, notices (mine), chats (mine), messages (mine).
-  void listen(String meId, void Function(String collection, List<Map<String, dynamic>> docs) onDocs);
+  /// [admin] also delivers `reports` (moderators only).
+  void listen(String meId, void Function(String collection, List<Map<String, dynamic>> docs) onDocs, {bool admin = false});
+
+  /// Whether the signed-in login is a moderator (a document in /admins/{authUid},
+  /// added by hand in the Firebase console).
+  Future<bool> isAdmin();
   void stop();
 
   // ---- writes

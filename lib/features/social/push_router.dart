@@ -2,6 +2,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 
 import 'messages_screen.dart';
+import 'moderation_screen.dart';
 import 'notifications_screen.dart';
 
 /// What happens with a push notification inside the app: tapping one opens
@@ -29,7 +30,9 @@ class PushRouter {
     final nav = navigatorKey.currentState;
     if (nav == null) return;
     final from = m.data['fromId'] ?? '';
-    if (m.data['type'] == 'message' && from.isNotEmpty) {
+    if (m.data['type'] == 'report') {
+      nav.push(MaterialPageRoute(builder: (_) => const ModerationScreen()));
+    } else if (m.data['type'] == 'message' && from.isNotEmpty) {
       nav.push(MaterialPageRoute(builder: (_) => ChatScreen(userId: from)));
     } else {
       nav.push(MaterialPageRoute(builder: (_) => const NotificationsScreen()));

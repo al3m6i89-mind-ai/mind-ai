@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../../app/theme.dart';
 import '../../services/social/social_service.dart';
 import '../../services/social/text_utils.dart';
+import 'report_sheet.dart';
 import 'widgets.dart';
 
 /// Comments for a reel or a photo: top comments with one level of answers,
@@ -75,6 +76,15 @@ class _CommentsSheetState extends State<CommentsSheet> {
                 copyText(context, c.text);
               },
             ),
+            if (c.authorId != social.meId)
+              ListTile(
+                leading: const Icon(Icons.flag_outlined, color: Colors.redAccent),
+                title: const Text('إبلاغ عن التعليق', style: TextStyle(color: Colors.redAccent)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  showReportSheet(context, target: ReportTarget.comment, targetId: c.id, authorId: c.authorId);
+                },
+              ),
             if (canDelete)
               ListTile(
                 leading: const Icon(Icons.delete_outline, color: Colors.redAccent),
