@@ -34,6 +34,7 @@ class _SocialOnboardingState extends State<SocialOnboarding> {
     super.initState();
     final settings = context.read<SettingsService>();
     _name = TextEditingController(text: widget.addAnother ? '' : settings.userName);
+    _email.text = settings.accountEmail;
     var h = widget.addAnother ? '' : Handle.suggest(settings.accountEmail.isEmpty ? settings.userName : settings.accountEmail);
     final social = context.read<SocialService>();
     if (h.isNotEmpty && !social.handleFree(h)) h = '${h.length > 16 ? h.substring(0, 16) : h}_${DateTime.now().millisecond % 1000}';
@@ -45,6 +46,8 @@ class _SocialOnboardingState extends State<SocialOnboarding> {
   void dispose() {
     _name.dispose();
     _handle.dispose();
+    _email.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -67,9 +70,96 @@ class _SocialOnboardingState extends State<SocialOnboarding> {
     }
   }
 
+  // ---- server sign-in (Firebase)
+  final _email = TextEditingController();
+  final _password = TextEditingController();
+  bool _hidePassword = true;
+
+  Future<void> _auth(Future<void> Function(SocialService s) call) async {
+    setState(() => _busy = true);
+    try {
+      await call(context.read<SocialService>());
+    } catch (e) {
+      if (mounted) toast(context, e);
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Widget _signIn() {
+    return ListView(
+      padding: const EdgeInsets.all(24),
+      children: [
+        const Center(child: Text('🎬 📸 💬', style: TextStyle(fontSize: 40))),
+        const SizedBox(height: 12),
+        const Center(
+          child: GradientText('مجتمع Mind Ai', style: TextStyle(fontSize: 26, fontWeight: FontWeight.w900)),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'سجّل دخولك ليصير حسابك وID الخاص بك واحداً على كل الأجهزة، ويراك الجميع.',
+          textAlign: TextAlign.center,
+          style: TextStyle(color: MindColors.muted, height: 1.6),
+        ),
+        const SizedBox(height: 24),
+        TextField(
+          controller: _email,
+          keyboardType: TextInputType.emailAddress,
+          textDirection: TextDirection.ltr,
+          decoration: const InputDecoration(labelText: 'البريد الإلكتروني', prefixIcon: Icon(Icons.mail_outline)),
+        ),
+        const SizedBox(height: 12),
+        TextField(
+          controller: _password,
+          obscureText: _hidePassword,
+          textDirection: TextDirection.ltr,
+          decoration: InputDecoration(
+            labelText: 'كلمة المرور (6 أحرف على الأقل)',
+            prefixIcon: const Icon(Icons.lock_outline),
+            suffixIcon: IconButton(
+              icon: Icon(_hidePassword ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+              onPressed: () => setState(() => _hidePassword = !_hidePassword),
+            ),
+          ),
+        ),
+        const SizedBox(height: 20),
+        GradientButton(
+          label: 'تسجيل الدخول',
+          loading: _busy,
+          onPressed: () => _auth((s) => s.signIn(_email.text, _password.text)),
+        ),
+        const SizedBox(height: 10),
+        OutlinedButton(
+          onPressed: _busy ? null : () => _auth((s) => s.signUp(_email.text, _password.text)),
+          child: const Text('إنشاء حساب جديد'),
+        ),
+        TextButton(
+          onPressed: _busy
+              ? null
+              : () => _auth((s) async {
+                  await s.resetPassword(_email.text);
+                  if (mounted) toast(context, 'أرسلنا رابط تغيير كلمة المرور إلى بريدك');
+                }),
+          child: const Text('نسيت كلمة المرور؟'),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final body = _created != null ? _done(_created!) : _form();
+    final social = context.watch<SocialService>();
+    final Widget body;
+    if (_created != null) {
+      body = _done(_created!);
+    } else if (social.online && !social.signedIn) {
+      body = _signIn();
+    } else if (social.hasAccount) {
+      // Signed in to a login that already has its profile: welcome back.
+      body = _done(social.me!);
+    } else {
+      body = _form();
+    }
     return widget.addAnother ? Scaffold(appBar: AppBar(title: const Text('حساب جديد')), body: body) : body;
   }
 

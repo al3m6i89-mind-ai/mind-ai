@@ -91,7 +91,12 @@ Future<void> _confirmDelete(BuildContext context, SocialPost post) async {
       ],
     ),
   );
-  if (ok == true && context.mounted) await context.read<SocialService>().deletePost(post);
+  if (ok != true || !context.mounted) return;
+  try {
+    await context.read<SocialService>().deletePost(post);
+  } catch (e) {
+    if (context.mounted) toast(context, e);
+  }
 }
 
 Future<void> _edit(BuildContext context, SocialPost post) async {

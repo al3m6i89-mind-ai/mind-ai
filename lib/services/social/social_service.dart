@@ -6,6 +6,7 @@ import 'package:uuid/uuid.dart';
 import 'models.dart';
 import 'seed.dart';
 import 'social_id.dart';
+import 'social_remote.dart';
 import 'social_store.dart';
 import 'text_utils.dart';
 
@@ -25,9 +26,16 @@ class SearchResults {
 /// The whole social space: one account (one ID) shared by Reels, Photos and
 /// Posts, with one follow graph, one inbox and one notification list.
 class SocialService extends ChangeNotifier {
-  SocialService(this._store, {DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  SocialService(this._store, {DateTime Function()? clock, this.remote}) : _clock = clock ?? DateTime.now;
 
   final SocialStore _store;
+
+  /// The server (Firebase). Null keeps everything on this phone.
+  final SocialRemote? remote;
+  bool get online => remote != null;
+
+  /// The last write the server refused, to show the user.
+  String? lastError;
   final DateTime Function() _clock;
   final _uuid = const Uuid();
 
@@ -45,6 +53,12 @@ class SocialService extends ChangeNotifier {
   // ======================================================== load / save
 
   Future<void> init() async {
+    if (online) {
+      await _connect();
+      ready = true;
+      notifyListeners();
+      return;
+    }
     final data = await _store.load();
     if (data == null) {
       final seed = SocialSeed(now)..build();
@@ -94,7 +108,125 @@ class SocialService extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _save() => _store.save({
+  // ======================================================== server
+
+  /// Links the signed-in login to its profile and starts the live data.
+  Future<void> _connect() async {
+    final r = remote!;
+    _meId = null;
+    if (r.authUid == null) return;
+    try {
+      _meId = await r.linkedId();
+    } catch (e) {
+      lastError = '$e';
+    }
+    if (_meId != null) r.listen(_meId!, _apply);
+  }
+
+  void _apply(String collection, List<Map<String, dynamic>> docs) {
+    switch (collection) {
+      case 'users':
+        final mine = me;
+        _users
+          ..clear()
+          ..addEntries(docs.map(SocialUser.fromJson).map((u) => MapEntry(u.id, u)));
+        if (mine != null) _users.putIfAbsent(mine.id, () => mine);
+      case 'posts':
+        _posts
+          ..clear()
+          ..addEntries(docs.map(SocialPost.fromJson).map((p) => MapEntry(p.id, p)));
+      case 'comments':
+        _comments
+          ..clear()
+          ..addEntries(docs.map(Comment.fromJson).map((c) => MapEntry(c.id, c)));
+      case 'stories':
+        _stories
+          ..clear()
+          ..addEntries(docs.map(Story.fromJson).map((x) => MapEntry(x.id, x)));
+      case 'notices':
+        _notices
+          ..clear()
+          ..addAll(docs.map(Notice.fromJson))
+          ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+      case 'chats':
+        _chatDocs = docs;
+        _rebuildChats();
+      case 'messages':
+        _messageDocs = docs;
+        _rebuildChats();
+    }
+    notifyListeners();
+  }
+
+  List<Map<String, dynamic>> _chatDocs = [];
+  List<Map<String, dynamic>> _messageDocs = [];
+
+  void _rebuildChats() {
+    _chats.clear();
+    for (final d in _chatDocs) {
+      final c = Chat.fromJson({...d, 'messages': const []});
+      _chats[c.key] = c;
+    }
+    for (final d in _messageDocs) {
+      final members = (d['members'] as List).cast<String>();
+      if (members.length != 2) continue;
+      final chat = _chats.putIfAbsent(Chat.keyFor(members[0], members[1]), () => Chat(members: members));
+      chat.messages.add(Message.fromJson(d));
+    }
+    for (final c in _chats.values) {
+      c.messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    }
+  }
+
+  /// Sends a change to the server; never throws (the live data restores the
+  /// server's truth if a write is refused, and [lastError] says why).
+  void _send(Future<void> Function(SocialRemote r) write) {
+    final r = remote;
+    if (r == null) return;
+    write(r).catchError((Object e) {
+      lastError = e is ArgumentError ? '${e.message}' : '$e';
+      notifyListeners();
+    });
+  }
+
+  Future<String> _media(String path) => online ? remote!.upload(path) : _store.importMedia(path);
+
+  /// The e-mail of the signed-in login (server mode).
+  String? get signedInEmail => remote?.authEmail;
+  bool get signedIn => remote?.authUid != null;
+
+  Future<void> signIn(String email, String password) async {
+    await remote!.signIn(email, password);
+    await _connect();
+    notifyListeners();
+  }
+
+  Future<void> signUp(String email, String password) async {
+    await remote!.signUp(email, password);
+    await _connect();
+    notifyListeners();
+  }
+
+  Future<void> resetPassword(String email) => remote!.resetPassword(email);
+
+  Future<void> signOut() async {
+    if (!online) return;
+    await remote!.signOut();
+    _meId = null;
+    _users.clear();
+    _posts.clear();
+    _comments.clear();
+    _stories.clear();
+    _notices.clear();
+    _chats.clear();
+    _chatDocs = [];
+    _messageDocs = [];
+    notifyListeners();
+  }
+
+  Future<void> _save() async {
+    if (online) return;
+    await _store.save({
     'version': 1,
     'me': _meId,
     'users': _users.values.map((u) => u.toJson()).toList(),
@@ -103,7 +235,8 @@ class SocialService extends ChangeNotifier {
     'stories': _stories.values.map((s) => s.toJson()).toList(),
     'notices': _notices.map((n) => n.toJson()).toList(),
     'chats': _chats.values.map((c) => c.toJson()).toList(),
-  });
+    });
+  }
 
   Future<void> _changed() async {
     notifyListeners();
@@ -146,15 +279,38 @@ class SocialService extends ChangeNotifier {
     if (problem != null) throw ArgumentError(problem);
     if (!handleFree(h)) throw ArgumentError('المعرّف @$h مستخدم، جرّب غيره');
     if (name.trim().isEmpty) throw ArgumentError('اكتب اسمك');
-    final u = SocialUser(
+    SocialUser make() => SocialUser(
       id: SocialId.generate(taken: _users.keys.toSet()),
       handle: h,
       name: name.trim(),
       bio: bio.trim(),
-      avatar: avatar.isEmpty ? '' : await _store.importMedia(avatar),
-      local: true,
+      local: !online,
       joined: now,
     );
+    var u = make();
+    if (online) {
+      if (remote!.authUid == null) throw StateError('سجّل الدخول أولاً');
+      // The server is the judge of uniqueness; a clashing ID is simply drawn again.
+      for (var attempt = 0;; attempt++) {
+        try {
+          await remote!.createProfile(u);
+          break;
+        } on StateError catch (e) {
+          if (e.message != 'id-taken' || attempt > 5) rethrow;
+          u = make();
+        }
+      }
+      if (avatar.isNotEmpty) {
+        u.avatar = await _media(avatar);
+        _send((r) => r.patch('users', u.id, {'avatar': u.avatar}));
+      }
+      _users[u.id] = u;
+      _meId = u.id;
+      remote!.listen(u.id, _apply);
+      notifyListeners();
+      return u;
+    }
+    if (avatar.isNotEmpty) u.avatar = await _media(avatar);
     _users[u.id] = u;
     _meId = u.id;
     final official = byHandle('mindai');
@@ -164,7 +320,7 @@ class SocialService extends ChangeNotifier {
   }
 
   Future<void> switchAccount(String id) async {
-    if (_users[id]?.local != true) return;
+    if (online || _users[id]?.local != true) return;
     _meId = id;
     await _changed();
   }
@@ -177,6 +333,7 @@ class SocialService extends ChangeNotifier {
       final problem = Handle.problem(h);
       if (problem != null) throw ArgumentError(problem);
       if (!handleFree(h, exceptId: u.id)) throw ArgumentError('المعرّف @$h مستخدم، جرّب غيره');
+      if (online) await remote!.changeHandle(u.id, u.handle, h);
       u.handle = h;
     }
     if (name != null) {
@@ -186,7 +343,8 @@ class SocialService extends ChangeNotifier {
     if (bio != null) u.bio = bio.trim();
     if (link != null) u.link = link.trim();
     if (private != null) u.private = private;
-    if (avatarPath != null) u.avatar = avatarPath.isEmpty ? '' : await _store.importMedia(avatarPath);
+    if (avatarPath != null) u.avatar = avatarPath.isEmpty ? '' : await _media(avatarPath);
+    _send((r) => r.patch('users', u.id, {'name': u.name, 'bio': u.bio, 'link': u.link, 'private': u.private, 'avatar': u.avatar}));
     await _changed();
   }
 
@@ -205,8 +363,12 @@ class SocialService extends ChangeNotifier {
     if (a == null || b == null || a.id == b.id) return;
     if (a.following.remove(b.id)) {
       b.followers.remove(a.id);
+      _send((r) => r.patch('users', a.id, {'following': ArrayRemove(b.id)}));
+      _send((r) => r.patch('users', b.id, {'followers': ArrayRemove(a.id)}));
     } else {
       _follow(a, b);
+      _send((r) => r.patch('users', a.id, {'following': ArrayAdd(b.id)}));
+      _send((r) => r.patch('users', b.id, {'followers': ArrayAdd(a.id)}));
       _notify(NoticeType.follow, to: b.id);
     }
     await _changed();
@@ -224,6 +386,13 @@ class SocialService extends ChangeNotifier {
       b.followers.remove(a.id);
       b.following.remove(a.id);
       a.followers.remove(id);
+      _send((r) => r.patch('users', a.id, {'blocked': ArrayAdd(id)}));
+      _send((r) => r.patch('users', a.id, {'following': ArrayRemove(id)}));
+      _send((r) => r.patch('users', a.id, {'followers': ArrayRemove(id)}));
+      _send((r) => r.patch('users', id, {'followers': ArrayRemove(a.id)}));
+      _send((r) => r.patch('users', id, {'following': ArrayRemove(a.id)}));
+    } else {
+      _send((r) => r.patch('users', a.id, {'blocked': ArrayRemove(id)}));
     }
     await _changed();
   }
@@ -366,7 +535,10 @@ class SocialService extends ChangeNotifier {
     if (!hasAccount) return;
     if (!p.likes.remove(meId)) {
       p.likes.add(meId);
+      _send((r) => r.patch('posts', p.id, {'likes': ArrayAdd(meId)}));
       _notify(NoticeType.like, to: p.authorId, postId: p.id);
+    } else {
+      _send((r) => r.patch('posts', p.id, {'likes': ArrayRemove(meId)}));
     }
     await _changed();
   }
@@ -380,13 +552,17 @@ class SocialService extends ChangeNotifier {
     if (!hasAccount) return;
     if (!p.saves.remove(meId)) {
       p.saves.add(meId);
+      _send((r) => r.patch('posts', p.id, {'saves': ArrayAdd(meId)}));
       _notify(NoticeType.save, to: p.authorId, postId: p.id);
+    } else {
+      _send((r) => r.patch('posts', p.id, {'saves': ArrayRemove(meId)}));
     }
     await _changed();
   }
 
   Future<void> markShared(SocialPost p) async {
     p.shares++;
+    _send((r) => r.patch('posts', p.id, {'shares': const Increment(1)}));
     await _changed();
   }
 
@@ -395,13 +571,14 @@ class SocialService extends ChangeNotifier {
     if (!hasAccount || p.viewers.contains(meId)) return;
     p.viewers.add(meId);
     p.views++;
+    _send((r) => r.patch('posts', p.id, {'viewers': ArrayAdd(meId), 'views': const Increment(1)}));
     await _changed();
   }
 
   Future<SocialPost> createReel({required String videoPath, String caption = '', String sound = '', String thumbPath = ''}) async {
     _checkText(caption, SocialText.captionLimit);
-    final src = await _store.importMedia(videoPath);
-    final thumb = thumbPath.isEmpty ? '' : await _store.importMedia(thumbPath);
+    final src = await _media(videoPath);
+    final thumb = thumbPath.isEmpty ? '' : await _media(thumbPath);
     return _add(SocialPost(
       id: _uuid.v4(),
       kind: PostKind.reel,
@@ -417,7 +594,7 @@ class SocialService extends ChangeNotifier {
     if (paths.isEmpty) throw ArgumentError('اختر صورة واحدة على الأقل');
     if (paths.length > 10) throw ArgumentError('10 صور كحد أقصى');
     _checkText(caption, SocialText.captionLimit);
-    final media = [for (final path in paths) Media(await _store.importMedia(path))];
+    final media = [for (final path in paths) Media(await _media(path))];
     return _add(SocialPost(
       id: _uuid.v4(),
       kind: PostKind.photo,
@@ -433,7 +610,7 @@ class SocialService extends ChangeNotifier {
     if (text.trim().isEmpty && imagePaths.isEmpty && quoteOf == null) throw ArgumentError('اكتب شيئاً');
     _checkText(text, SocialText.postLimit);
     if (imagePaths.length > 4) throw ArgumentError('4 صور كحد أقصى');
-    final media = [for (final path in imagePaths) Media(await _store.importMedia(path))];
+    final media = [for (final path in imagePaths) Media(await _media(path))];
     final p = await _add(SocialPost(
       id: _uuid.v4(),
       kind: PostKind.post,
@@ -458,6 +635,7 @@ class SocialService extends ChangeNotifier {
     if (mine.isNotEmpty) {
       for (final x in mine) {
         _posts.remove(x.id);
+        _send((r) => r.delete('posts', x.id));
       }
       await _changed();
       return;
@@ -469,9 +647,16 @@ class SocialService extends ChangeNotifier {
 
   Future<void> deletePost(SocialPost p) async {
     if (p.authorId != meId) return;
+    if (online) {
+      // Comments first: the rules let the post's owner remove them only while the post exists.
+      for (final c in _comments.values.where((c) => c.postId == p.id).toList()) {
+        await remote!.delete('comments', c.id);
+      }
+      await remote!.delete('posts', p.id);
+    }
     _posts.remove(p.id);
     // Reposts of it go too; replies and quotes stay but show "unavailable".
-    _posts.removeWhere((_, x) => x.repostOf == p.id);
+    _posts.removeWhere((_, x) => x.repostOf == p.id && (!online || x.authorId == meId));
     _comments.removeWhere((_, c) => c.postId == p.id);
     _notices.removeWhere((n) => n.postId == p.id);
     await _changed();
@@ -480,6 +665,7 @@ class SocialService extends ChangeNotifier {
   Future<void> setCommentsOff(SocialPost p, bool off) async {
     if (p.authorId != meId) return;
     p.commentsOff = off;
+    _send((r) => r.patch('posts', p.id, {'commentsOff': off}));
     await _changed();
   }
 
@@ -487,10 +673,12 @@ class SocialService extends ChangeNotifier {
     if (p.authorId != meId) return;
     _checkText(text, p.kind == PostKind.post ? SocialText.postLimit : SocialText.captionLimit);
     p.text = text.trim();
+    _send((r) => r.patch('posts', p.id, {'text': p.text}));
     await _changed();
   }
 
   Future<SocialPost> _add(SocialPost p) async {
+    if (online) await remote!.put('posts', p.id, p.toJson());
     _posts[p.id] = p;
     _notifyMentions(p.text, postId: p.id);
     await _changed();
@@ -540,6 +728,7 @@ class SocialService extends ChangeNotifier {
       createdAt: now,
       parentId: parent?.parentId ?? parent?.id,
     );
+    if (online) await remote!.put('comments', c.id, c.toJson());
     _comments[c.id] = c;
     _notify(NoticeType.comment, to: p.authorId, postId: p.id, text: c.text);
     if (parent != null && parent.authorId != p.authorId) {
@@ -552,7 +741,12 @@ class SocialService extends ChangeNotifier {
 
   Future<void> toggleCommentLike(Comment c) async {
     if (!hasAccount) return;
-    if (!c.likes.remove(meId)) c.likes.add(meId);
+    if (!c.likes.remove(meId)) {
+      c.likes.add(meId);
+      _send((r) => r.patch('comments', c.id, {'likes': ArrayAdd(meId)}));
+    } else {
+      _send((r) => r.patch('comments', c.id, {'likes': ArrayRemove(meId)}));
+    }
     await _changed();
   }
 
@@ -560,8 +754,12 @@ class SocialService extends ChangeNotifier {
     final p = _posts[c.postId];
     // The writer, or the owner of the post, can remove a comment.
     if (c.authorId != meId && p?.authorId != meId) return;
-    _comments.remove(c.id);
-    _comments.removeWhere((_, x) => x.parentId == c.id);
+    final gone = [c, ..._comments.values.where((x) => x.parentId == c.id && (x.authorId == meId || p?.authorId == meId))];
+    for (final x in gone) {
+      _comments.remove(x.id);
+      _send((r) => r.delete('comments', x.id));
+    }
+    if (!online) _comments.removeWhere((_, x) => x.parentId == c.id);
     await _changed();
   }
 
@@ -591,10 +789,11 @@ class SocialService extends ChangeNotifier {
     final s = Story(
       id: _uuid.v4(),
       authorId: _mustMe(),
-      media: Media(await _store.importMedia(path), video: video),
+      media: Media(await _media(path), video: video),
       caption: caption.trim(),
       createdAt: now,
     );
+    if (online) await remote!.put('stories', s.id, s.toJson());
     _stories[s.id] = s;
     await _changed();
     return s;
@@ -603,6 +802,7 @@ class SocialService extends ChangeNotifier {
   Future<void> markStorySeen(Story s) async {
     if (!hasAccount || s.seenBy.contains(meId)) return;
     s.seenBy.add(meId);
+    _send((r) => r.patch('stories', s.id, {'seenBy': ArrayAdd(meId)}));
     await _changed();
   }
 
@@ -610,7 +810,10 @@ class SocialService extends ChangeNotifier {
     if (!hasAccount) return;
     if (!s.likes.remove(meId)) {
       s.likes.add(meId);
+      _send((r) => r.patch('stories', s.id, {'likes': ArrayAdd(meId)}));
       _notify(NoticeType.storyLike, to: s.authorId);
+    } else {
+      _send((r) => r.patch('stories', s.id, {'likes': ArrayRemove(meId)}));
     }
     await _changed();
   }
@@ -618,6 +821,7 @@ class SocialService extends ChangeNotifier {
   Future<void> deleteStory(Story s) async {
     if (s.authorId != meId) return;
     _stories.remove(s.id);
+    _send((r) => r.delete('stories', s.id));
     await _changed();
   }
 
@@ -625,14 +829,27 @@ class SocialService extends ChangeNotifier {
 
   void _notify(NoticeType type, {required String to, String? postId, String text = ''}) {
     if (to == meId || !_users.containsKey(to)) return;
-    // Liking, unliking and liking again shouldn't stack up.
-    if (type == NoticeType.like || type == NoticeType.follow || type == NoticeType.save || type == NoticeType.repost) {
+    // Liking, unliking and liking again shouldn't stack up: these get one
+    // fixed ID per person, post and kind, so a repeat replaces the old one.
+    final once = type == NoticeType.like || type == NoticeType.follow || type == NoticeType.save || type == NoticeType.repost;
+    if (once) {
       _notices.removeWhere((n) => n.type == type && n.toId == to && n.fromId == meId && n.postId == postId);
     }
-    _notices.insert(
-      0,
-      Notice(id: _uuid.v4(), type: type, toId: to, fromId: meId, postId: postId, text: text, createdAt: now),
+    final n = Notice(
+      id: once ? '${type.name}_${meId}_${to}_${postId ?? ''}' : _uuid.v4(),
+      type: type,
+      toId: to,
+      fromId: meId,
+      postId: postId,
+      text: text.length > 300 ? text.substring(0, 300) : text,
+      createdAt: now,
     );
+    if (online) {
+      // Someone else's notice: it lives on the server only.
+      _send((r) => r.put('notices', n.id, n.toJson()));
+      return;
+    }
+    _notices.insert(0, n);
     if (_notices.length > 2000) _notices.removeRange(2000, _notices.length);
   }
 
@@ -654,6 +871,7 @@ class SocialService extends ChangeNotifier {
       if (!n.read) {
         n.read = true;
         any = true;
+        _send((r) => r.patch('notices', n.id, {'read': true}));
       }
     }
     if (any) await _changed();
@@ -674,7 +892,15 @@ class SocialService extends ChangeNotifier {
     if (_users[to]?.blocked.contains(meId) ?? false) throw ArgumentError('لا يمكنك مراسلة هذا الحساب');
     final key = Chat.keyFor(_mustMe(), to);
     final chat = _chats.putIfAbsent(key, () => Chat(members: [meId, to]));
-    chat.messages.add(Message(id: _uuid.v4(), fromId: meId, text: text.trim(), postId: postId, createdAt: now));
+    final m = Message(id: _uuid.v4(), fromId: meId, text: text.trim(), postId: postId, createdAt: now);
+    if (online) {
+      await remote!.put('chats', key, {
+        'members': chat.members,
+        'readAt': {meId: now.toUtc().toIso8601String()},
+      }, merge: true);
+      await remote!.put('messages', m.id, {...m.toJson(), 'members': chat.members});
+    }
+    chat.messages.add(m);
     chat.readAt[meId] = now;
     _notify(NoticeType.message, to: to, text: text.trim());
     await _changed();
@@ -684,6 +910,7 @@ class SocialService extends ChangeNotifier {
     final chat = _chats[Chat.keyFor(meId, uid)];
     if (chat == null || chat.unread(meId) == 0) return;
     chat.readAt[meId] = now;
+    _send((r) => r.patch('chats', chat.key, {'readAt.$meId': now.toUtc().toIso8601String()}));
     await _changed();
   }
 

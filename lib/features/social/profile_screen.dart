@@ -135,6 +135,18 @@ class ProfileScreen extends StatelessWidget {
                   social.switchAccount(a.id);
                 },
               ),
+            if (social.online)
+              ListTile(
+                leading: const Icon(Icons.logout, color: Colors.redAccent),
+                title: const Text('تسجيل الخروج', style: TextStyle(color: Colors.redAccent)),
+                subtitle: Text(social.signedInEmail ?? '', textDirection: TextDirection.ltr, textAlign: TextAlign.end),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  Navigator.of(context).popUntil((r) => r.isFirst);
+                  social.signOut();
+                },
+              )
+            else
             ListTile(
               leading: const Icon(Icons.person_add_alt),
               title: const Text('إضافة حساب'),

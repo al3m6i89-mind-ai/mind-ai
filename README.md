@@ -31,5 +31,6 @@
 2. أنشئ الاشتراكين `mindai_pro_monthly` و`mindai_max_monthly` في Play Console.
 3. تحقّق من المشتريات على خادم (موضع ذلك معلَّم في `subscription_service.dart`).
 
-## مجتمع Mind Ai: التخزين والخادم
-البيانات حالياً تُحفظ على الجوال (`FileSocialStore`) مع محتوى تجريبي أولي، فتعمل كل الميزات بدون إنترنت أو خادم. لتصير شبكة حقيقية بين مستخدمين على أجهزة مختلفة، أضف تطبيقاً لواجهة `SocialStore` في `lib/services/social/social_store.dart` يتصل بخادم (Firebase أو Supabase أو API خاص). الشاشات لا تحتاج أي تعديل.
+## مجتمع Mind Ai: الخادم
+- **بدون إعداد**: البيانات على الجوال فقط (`FileSocialStore`) مع محتوى تجريبي.
+- **مع Firebase**: املأ `lib/services/social/firebase_config.dart` فيصير شبكة حقيقية: Auth للدخول، Firestore للبيانات، Storage للصور والفيديو. الدليل خطوة بخطوة وقواعد الحماية في [`firebase/`](firebase/README.md).
