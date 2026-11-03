@@ -58,3 +58,19 @@ Google تطلب الآن خطة **Blaze** لتفعيل Storage. تحتاج إض�
 - المعرّف `@handle` محجوز في `handles/{handle}` داخل معاملة واحدة، فلا يأخذه شخصان.
 - على منشورات وحسابات غيرك لا تستطيع إلا إضافة أو إزالة الـ ID الخاص بك (إعجاب، حفظ، متابعة، مشاهدة مرة واحدة).
 - الإشعارات يقرأها صاحبها فقط، والرسائل يقرأها طرفا المحادثة فقط.
+
+## 8) إشعارات الدفع (تصل والتطبيق مغلق)
+الإشعار يُرسَل من كود صغير على خوادم Firebase (`functions/index.js`). يراقب كل إشعار جديد ويرسله لجوال صاحبه. نشر الكود يتم من GitHub تلقائياً، بدون كمبيوتر.
+
+1. **خطة Blaze**: الدوال (Cloud Functions) تحتاجها. الاستخدام الصغير مجاني (مليونا تشغيل شهرياً). إن لم تكن رقّيت: ⚙️ ← **Usage and billing** ← **Modify plan** ← Blaze، وضع تنبيه ميزانية.
+2. **مفتاح حساب الخدمة**: ⚙️ **Project settings** ← **Service accounts** ← **Generate new private key** ← **Generate key**. يُحمَّل ملف JSON. **هذا الملف سرّي**: لا ترسله لأحد ولا ترفعه للمستودع.
+3. **صلاحية النشر**: افتح https://console.cloud.google.com/iam-admin/iam?project=chat-f9edd
+   ابحث عن الحساب الذي يبدأ بـ `firebase-adminsdk-` ← ✏️ ← **Add another role** ← **Owner** ← **Save**.
+4. **أعطِ المفتاح لـ GitHub**: المستودع ← **Settings** ← **Secrets and variables** ← **Actions** ← **New repository secret**
+   - Name: `FIREBASE_SERVICE_ACCOUNT`
+   - Secret: الصق محتوى ملف JSON كاملاً ← **Add secret**.
+5. **انشر**: المستودع ← **Actions** ← **Deploy Firebase (push notifications + rules)** ← **Run workflow** ← اختر الفرع ← **Run workflow**.
+   ينشر الدالة وقواعد Firestore معاً (بما فيها قاعدة `tokens` الجديدة). أول مرة تأخذ 3–5 دقائق.
+6. ثبّت الـ APK الجديد ← افتح «مجتمع» ← اسمح بالإشعارات.
+
+**التجربة**: من حساب على جوال آخر تابِع حسابك أو راسله وتطبيقك مغلق، فيصل الإشعار خلال ثوانٍ. الضغط عليه يفتح المحادثة أو قائمة الإشعارات.

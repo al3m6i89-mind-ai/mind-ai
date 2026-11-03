@@ -4,6 +4,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:provider/provider.dart';
 
 import 'app/shell.dart';
+import 'features/social/push_router.dart';
 import 'features/auth/sign_in_screen.dart';
 import 'app/theme.dart';
 import 'providers/image_gen.dart';
@@ -55,6 +56,7 @@ Future<void> main() async {
       child: const MindApp(),
     ),
   );
+  if (social.online) PushRouter.start();
 }
 
 /// Connects the Community to Firebase when lib/services/social/firebase_config.dart
@@ -78,6 +80,8 @@ class MindApp extends StatelessWidget {
     final dark = context.select<SettingsService, bool>((s) => s.darkMode);
     return MaterialApp(
       title: 'Mind Ai',
+      navigatorKey: PushRouter.navigatorKey,
+      scaffoldMessengerKey: PushRouter.messengerKey,
       debugShowCheckedModeBanner: false,
       theme: buildTheme(Brightness.light),
       darkTheme: buildTheme(Brightness.dark),

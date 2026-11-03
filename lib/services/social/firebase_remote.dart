@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
@@ -15,6 +16,37 @@ class FirebaseSocialRemote implements SocialRemote {
   final _auth = FirebaseAuth.instance;
   final _db = FirebaseFirestore.instance;
   final _subs = <StreamSubscription<dynamic>>[];
+
+  // ---- push notifications: this phone's token, saved in /tokens for the server.
+  String? _token;
+  String? _pushId;
+  StreamSubscription<String>? _tokenRefresh;
+
+  Future<void> _registerPush(String meId) async {
+    _pushId = meId;
+    try {
+      final m = FirebaseMessaging.instance;
+      final perm = await m.requestPermission();
+      if (perm.authorizationStatus == AuthorizationStatus.denied) return;
+      final token = await m.getToken();
+      if (token != null) await _saveToken(token);
+      _tokenRefresh ??= m.onTokenRefresh.listen(_saveToken);
+    } catch (_) {
+      // No Google Play services or no network: the app still works without push.
+    }
+  }
+
+  Future<void> _saveToken(String token) async {
+    final id = _pushId, uid = authUid;
+    if (id == null || uid == null) return;
+    _token = token;
+    await _db.collection('tokens').doc(token).set({
+      'id': id,
+      'authUid': uid,
+      'platform': 'android',
+      'updatedAt': DateTime.now().toUtc().toIso8601String(),
+    });
+  }
 
   @override
   String? get authUid => _auth.currentUser?.uid;
@@ -57,6 +89,16 @@ class FirebaseSocialRemote implements SocialRemote {
   @override
   Future<void> signOut() async {
     stop();
+    // This phone stops receiving the old account's notifications.
+    final token = _token;
+    _pushId = null;
+    _token = null;
+    if (token != null) {
+      try {
+        await _db.collection('tokens').doc(token).delete();
+        await FirebaseMessaging.instance.deleteToken();
+      } catch (_) {}
+    }
     await _auth.signOut();
   }
 
@@ -121,6 +163,7 @@ class FirebaseSocialRemote implements SocialRemote {
     on('notices', _db.collection('notices').where('toId', isEqualTo: meId).limit(500));
     on('chats', _db.collection('chats').where('members', arrayContains: meId));
     on('messages', _db.collection('messages').where('members', arrayContains: meId).limit(3000));
+    _registerPush(meId);
   }
 
   @override

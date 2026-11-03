@@ -1,0 +1,73 @@
+name: Deploy Firebase (push notifications + rules)
+
+# Deploys functions/ (push notifications) and firebase/firestore.rules to the
+# Firebase project in .firebaserc. Needs the repository secret
+# FIREBASE_SERVICE_ACCOUNT (a service account key, see firebase/README.md).
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, 'ccr-*']
+    paths:
+      - 'functions/**'
+      - 'firebase/firestore.rules'
+      - 'firebase.json'
+      - '.github/workflows/deploy-firebase.yml'
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the secret is set
+        id: check
+        env:
+          SA: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: |
+          if [ -n "$SA" ]; then echo "ok=true" >> "$GITHUB_OUTPUT"; exit 0; fi
+          echo "ok=false" >> "$GITHUB_OUTPUT"
+          MSG="Add the repository secret FIREBASE_SERVICE_ACCOUNT first (firebase/README.md, push notifications section)."
+          # A push just skips; running it by hand says clearly what's missing.
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then echo "::error::$MSG"; exit 1; fi
+          echo "::notice::Skipped. $MSG"
+
+      - if: steps.check.outputs.ok == 'true'
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          token_format: access_token
+
+      - if: steps.check.outputs.ok == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Functions that react to Firestore must run where the database lives.
+      - if: steps.check.outputs.ok == 'true'
+        name: Find the Firestore location
+        env:
+          TOKEN: ${{ steps.auth.outputs.access_token }}
+        run: |
+          PROJECT=$(node -p "require('./.firebaserc').projects.default")
+          LOC=$(curl -sf -H "Authorization: Bearer $TOKEN" \
+            "https://firestore.googleapis.com/v1/projects/$PROJECT/databases/(default)" \
+            | node -e "let s='';process.stdin.on('data',d=>s+=d).on('end',()=>{try{console.log(JSON.parse(s).locationId||'')}catch(e){console.log('')}})" || true)
+          case "$LOC" in
+            nam5|"") REGION=us-central1 ;;
+            nam7) REGION=us-east4 ;;
+            eur3) REGION=europe-west1 ;;
+            *) REGION=$LOC ;;
+          esac
+          echo "Firestore location: ${LOC:-unknown} -> functions region: $REGION"
+          echo "FN_REGION=$REGION" > functions/.env
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
+      - if: steps.check.outputs.ok == 'true'
+        run: npm install --omit=dev
+        working-directory: functions
+
+      - if: steps.check.outputs.ok == 'true'
+        name: Deploy
+        run: npx --yes firebase-tools@14 deploy --only functions,firestore:rules --project "$PROJECT" --force --non-interactive

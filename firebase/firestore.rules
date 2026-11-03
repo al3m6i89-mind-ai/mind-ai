@@ -130,6 +130,17 @@ service cloud.firestore {
       allow delete: if signedIn() && resource.data.authorId == myId();
     }
 
+    // ---------------------------------------------------------------- push notifications
+
+    // A phone's push token, so the server can reach it. Only the server reads these.
+    match /tokens/{token} {
+      allow read: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.id == myId();
+      allow delete: if signedIn() && resource.data.authUid == request.auth.uid;
+    }
+
     // ---------------------------------------------------------------- notifications & messages
 
     match /notices/{nid} {

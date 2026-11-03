@@ -60,6 +60,7 @@ dependencies:
   firebase_auth: ^6.0.2
   cloud_firestore: ^6.0.1
   firebase_storage: ^13.0.1
+  firebase_messaging: ^16.0.1
 
 dev_dependencies:
   flutter_test:
