@@ -8,6 +8,7 @@ import 'package:firebase_storage/firebase_storage.dart';
 import 'package:uuid/uuid.dart';
 
 import 'models.dart';
+import 'social_service.dart' show SocialService;
 import 'social_remote.dart';
 
 /// The social space on Firebase: Auth for sign-in, Firestore for data,
@@ -157,7 +158,8 @@ class FirebaseSocialRemote implements SocialRemote {
 
     final dayAgo = DateTime.now().toUtc().subtract(Story.life).toIso8601String();
     on('users', _db.collection('users').limit(5000));
-    on('posts', _db.collection('posts').orderBy('createdAt', descending: true).limit(500));
+    // The newest posts stay live; older ones come page by page (postsPage).
+    on('posts', _db.collection('posts').orderBy('createdAt', descending: true).limit(liveWindow));
     on('comments', _db.collection('comments').orderBy('createdAt', descending: true).limit(3000));
     on('stories', _db.collection('stories').where('createdAt', isGreaterThan: dayAgo));
     on('notices', _db.collection('notices').where('toId', isEqualTo: meId).limit(500));
@@ -193,6 +195,21 @@ class FirebaseSocialRemote implements SocialRemote {
 
   @override
   Future<void> delete(String collection, String id) => _db.collection(collection).doc(id).delete();
+
+  /// How many of the newest posts are kept live.
+  static const liveWindow = SocialService.liveWindow;
+
+  @override
+  Future<List<Map<String, dynamic>>> postsPage({String? kind, String? authorId, String? before, int limit = 24}) async {
+    Query<Map<String, dynamic>> q = _db.collection('posts');
+    // Each filter + order pair has a composite index (firebase/firestore.indexes.json).
+    if (kind != null) q = q.where('kind', isEqualTo: kind);
+    if (authorId != null) q = q.where('authorId', isEqualTo: authorId);
+    q = q.orderBy('createdAt', descending: true);
+    if (before != null) q = q.startAfter([before]);
+    final snap = await q.limit(limit).get();
+    return [for (final d in snap.docs) d.data()];
+  }
 
   @override
   Future<String> upload(String path) async {

@@ -87,16 +87,22 @@ class ProfileScreen extends StatelessWidget {
               ? const EmptyState('🔒', 'هذا الحساب خاص\nتابعه لترى ريلزه وصوره ومنشوراته')
               : TabBarView(
                   children: [
-                    _Grid(posts: social.byAuthor(u.id, PostKind.reel).where((p) => p.repostOf == null).toList(), reels: true, mine: mine),
-                    _Grid(posts: social.byAuthor(u.id, PostKind.photo).where((p) => p.repostOf == null).toList(), mine: mine),
-                    _List(posts: social.byAuthor(u.id, PostKind.post), empty: 'لا توجد منشورات بعد'),
-                    _List(posts: social.byAuthor(u.id, PostKind.post, replies: true), empty: 'لا توجد ردود بعد'),
+                    _paged(PostKind.reel, u.id, _Grid(posts: social.byAuthor(u.id, PostKind.reel).where((p) => p.repostOf == null).toList(), reels: true, mine: mine)),
+                    _paged(PostKind.photo, u.id, _Grid(posts: social.byAuthor(u.id, PostKind.photo).where((p) => p.repostOf == null).toList(), mine: mine)),
+                    _paged(PostKind.post, u.id, _List(posts: social.byAuthor(u.id, PostKind.post), empty: 'لا توجد منشورات بعد')),
+                    _paged(PostKind.post, u.id, _List(posts: social.byAuthor(u.id, PostKind.post, replies: true), empty: 'لا توجد ردود بعد')),
                     if (mine) const _Saved(),
                   ],
                 ),
         ),
       ),
     );
+  }
+
+  /// Older posts of this person load page by page as their tab scrolls.
+  static Widget _paged(PostKind kind, String uid, Widget list) {
+    final count = list is _Grid ? list.posts.length : (list as _List).posts.length;
+    return AuthorPager(kind: kind, authorId: uid, count: count, child: list);
   }
 
   void _myMenu(BuildContext context) {
@@ -313,6 +319,9 @@ class _Header extends StatelessWidget {
   }
 }
 
+/// True while any older page is on its way (shows a spinner instead of "nothing yet").
+bool _loadingAny(BuildContext context) => context.watch<SocialService>().loadingAnyPage;
+
 class _TabsHeader extends SliverPersistentHeaderDelegate {
   _TabsHeader(this.bar, this.bg);
   final TabBar bar;
@@ -338,6 +347,7 @@ class _Grid extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (posts.isEmpty && _loadingAny(context)) return const Center(child: CircularProgressIndicator());
     if (posts.isEmpty) {
       return EmptyState(
         reels ? '🎬' : '📸',
@@ -361,6 +371,7 @@ class _List extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (posts.isEmpty && _loadingAny(context)) return const Center(child: CircularProgressIndicator());
     if (posts.isEmpty) return EmptyState('💬', empty);
     return ListView.separated(
       padding: EdgeInsets.zero,

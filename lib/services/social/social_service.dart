@@ -48,6 +48,93 @@ class SocialService extends ChangeNotifier {
   String? _meId;
   bool ready = false;
 
+  // ---- infinite scroll (server mode)
+  static const pageSize = 24;
+
+  /// Newest posts the server keeps live (FirebaseSocialRemote.liveWindow).
+  static const liveWindow = 150;
+  final Map<String, DateTime> _failedAt = {};
+  final Set<String> _livePosts = {};
+  final Map<String, String> _cursors = {};
+  final Set<String> _exhausted = {};
+  final Set<String> _loadingPages = {};
+
+  /// The live window moved: new and changed posts come in; a post that left
+  /// the window only because newer ones arrived stays (it's still real), while
+  /// one missing from inside the window was deleted.
+  void _applyLivePosts(List<SocialPost> live) {
+    final ids = {for (final p in live) p.id};
+    final oldest = live.isEmpty ? null : live.map((p) => p.createdAt).reduce((a, b) => a.isBefore(b) ? a : b);
+    for (final id in _livePosts.difference(ids)) {
+      final p = _posts[id];
+      if (p == null) continue;
+      final slidOut = oldest != null && p.createdAt.isBefore(oldest) && live.length >= liveWindow;
+      if (!slidOut) _posts.remove(id);
+    }
+    for (final p in live) {
+      _posts[p.id] = p;
+    }
+    _livePosts
+      ..clear()
+      ..addAll(ids);
+  }
+
+  static String _pageKey(PostKind? kind, String? authorId) => '${kind?.name ?? '*'}|${authorId ?? '*'}';
+
+  /// Whether older posts may exist for this list (always false on the phone-only mode,
+  /// which already has everything).
+  bool canLoadMore({PostKind? kind, String? authorId}) => online && !_exhausted.contains(_pageKey(kind, authorId));
+
+  bool isLoadingMore({PostKind? kind, String? authorId}) => _loadingPages.contains(_pageKey(kind, authorId));
+
+  bool get loadingAnyPage => _loadingPages.isNotEmpty;
+
+  /// Fetches the next page of older posts for a section and/or a person.
+  /// Returns how many new posts arrived.
+  Future<int> loadMore({PostKind? kind, String? authorId}) async {
+    final key = _pageKey(kind, authorId);
+    if (!online || _exhausted.contains(key) || _loadingPages.contains(key)) return 0;
+    // After a failure (no network, index still building) wait a little before retrying.
+    final failed = _failedAt[key];
+    if (failed != null && DateTime.now().difference(failed) < const Duration(seconds: 20)) return 0;
+    _loadingPages.add(key);
+    notifyListeners();
+    var added = 0;
+    try {
+      // Continue below this list's last page; the first page starts below the
+      // live window (which already holds everything newer, for every list).
+      // Posts loaded by other lists don't move the cursor, so nothing is skipped.
+      var before = _cursors[key];
+      if (before == null && _livePosts.isNotEmpty && _livePosts.length < liveWindow) {
+        // The live window isn't even full: the server has nothing older.
+        _exhausted.add(key);
+        return 0;
+      }
+      if (before == null) {
+        final live = _livePosts.map((id) => _posts[id]).whereType<SocialPost>();
+        if (live.length >= liveWindow) {
+          before = live.map((p) => p.createdAt).reduce((a, b) => a.isBefore(b) ? a : b).toUtc().toIso8601String();
+        }
+      }
+      final docs = await remote!.postsPage(kind: kind?.name, authorId: authorId, before: before, limit: pageSize);
+      for (final d in docs) {
+        final p = SocialPost.fromJson(d);
+        if (!_posts.containsKey(p.id)) added++;
+        _posts[p.id] = p;
+      }
+      if (docs.isNotEmpty) _cursors[key] = docs.last['createdAt'] as String;
+      if (docs.length < pageSize) _exhausted.add(key);
+      _failedAt.remove(key);
+    } catch (e) {
+      lastError = '$e';
+      _failedAt[key] = DateTime.now();
+    } finally {
+      _loadingPages.remove(key);
+      notifyListeners();
+    }
+    return added;
+  }
+
   DateTime get now => _clock();
 
   // ======================================================== load / save
@@ -132,9 +219,7 @@ class SocialService extends ChangeNotifier {
           ..addEntries(docs.map(SocialUser.fromJson).map((u) => MapEntry(u.id, u)));
         if (mine != null) _users.putIfAbsent(mine.id, () => mine);
       case 'posts':
-        _posts
-          ..clear()
-          ..addEntries(docs.map(SocialPost.fromJson).map((p) => MapEntry(p.id, p)));
+        _applyLivePosts(docs.map(SocialPost.fromJson).toList());
       case 'comments':
         _comments
           ..clear()

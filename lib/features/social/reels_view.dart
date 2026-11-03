@@ -39,6 +39,10 @@ class _ReelsViewState extends State<ReelsView> {
     super.initState();
     _index = widget.initialIndex;
     _snapshot();
+    // A short feed (few new reels in the live window) fills up right away.
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _ids.length < 4) _more();
+    });
   }
 
   /// The order is fixed until refresh, so likes and views don't reshuffle the feed mid-swipe.
@@ -46,6 +50,23 @@ class _ReelsViewState extends State<ReelsView> {
     final social = context.read<SocialService>();
     final list = widget.posts ?? social.feed(PostKind.reel, following: _following);
     _ids = list.map((p) => p.id).toList();
+  }
+
+  bool _loading = false;
+
+  /// Three reels before the end, fetch older ones and queue the new ones.
+  Future<void> _more() async {
+    if (_loading || widget.posts != null) return;
+    _loading = true;
+    final social = context.read<SocialService>();
+    final fresh = await moreFeedIds(
+      social,
+      PostKind.reel,
+      () => social.feed(PostKind.reel, following: _following),
+      _ids,
+    );
+    if (mounted && fresh.isNotEmpty) setState(() => _ids.addAll(fresh));
+    _loading = false;
   }
 
   void _switch(bool following) {
@@ -57,6 +78,7 @@ class _ReelsViewState extends State<ReelsView> {
       _pages.dispose();
       _pages = PageController();
     });
+    if (_ids.length < 4) _more();
   }
 
   Future<void> _refresh() async {
@@ -95,7 +117,10 @@ class _ReelsViewState extends State<ReelsView> {
                 controller: _pages,
                 scrollDirection: Axis.vertical,
                 itemCount: posts.length,
-                onPageChanged: (i) => setState(() => _index = i),
+                onPageChanged: (i) {
+                  setState(() => _index = i);
+                  if (i >= posts.length - 3) _more();
+                },
                 itemBuilder: (_, i) => ReelItem(post: posts[i], active: widget.active && i == _index),
               ),
             ),

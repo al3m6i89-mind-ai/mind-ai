@@ -56,6 +56,24 @@ class _TimelineState extends State<_Timeline> with AutomaticKeepAliveClientMixin
 
   void _snapshot() => _ids = context.read<SocialService>().feed(PostKind.post, following: widget.following).map((p) => p.id).toList();
 
+  bool _loading = false;
+
+  void _more() {
+    if (_loading) return;
+    _loading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final social = context.read<SocialService>();
+      final fresh = await moreFeedIds(
+        social,
+        PostKind.post,
+        () => social.feed(PostKind.post, following: widget.following),
+        _ids,
+      );
+      if (mounted && fresh.isNotEmpty) setState(() => _ids.addAll(fresh));
+      _loading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     super.build(context);
@@ -68,6 +86,14 @@ class _TimelineState extends State<_Timeline> with AutomaticKeepAliveClientMixin
       child: posts.isEmpty
           ? ListView(
               children: [
+                if (social.canLoadMore(kind: PostKind.post)) ...[
+                  Builder(
+                    builder: (_) {
+                      _more();
+                      return const LoadMoreFooter(kind: PostKind.post);
+                    },
+                  ),
+                ],
                 const SizedBox(height: 80),
                 EmptyState(
                   '💬',
@@ -82,9 +108,13 @@ class _TimelineState extends State<_Timeline> with AutomaticKeepAliveClientMixin
             )
           : ListView.separated(
               padding: const EdgeInsets.only(bottom: 90),
-              itemCount: posts.length,
+              itemCount: posts.length + 1,
               separatorBuilder: (_, _) => const Divider(height: 1),
-              itemBuilder: (_, i) => PostCard(post: posts[i]),
+              itemBuilder: (_, i) {
+                if (i >= posts.length - 3) _more();
+                if (i == posts.length) return const LoadMoreFooter(kind: PostKind.post);
+                return PostCard(post: posts[i]);
+              },
             ),
     );
   }

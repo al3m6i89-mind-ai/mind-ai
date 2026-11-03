@@ -10,6 +10,7 @@ on:
     paths:
       - 'functions/**'
       - 'firebase/firestore.rules'
+      - 'firebase/firestore.indexes.json'
       - 'firebase.json'
       - '.github/workflows/deploy-firebase.yml'
 
@@ -70,4 +71,4 @@ jobs:
 
       - if: steps.check.outputs.ok == 'true'
         name: Deploy
-        run: npx --yes firebase-tools@14 deploy --only functions,firestore:rules --project "$PROJECT" --force --non-interactive
+        run: npx --yes firebase-tools@14 deploy --only functions,firestore --project "$PROJECT" --force --non-interactive

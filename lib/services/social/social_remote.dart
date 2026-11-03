@@ -39,6 +39,11 @@ abstract class SocialRemote {
   Future<void> patch(String collection, String id, Map<String, dynamic> fields);
   Future<void> delete(String collection, String id);
 
+  // ---- older content, one page at a time
+  /// Posts older than [before] (an ISO-8601 UTC `createdAt`), newest first,
+  /// optionally only of one [kind] or one [authorId].
+  Future<List<Map<String, dynamic>>> postsPage({String? kind, String? authorId, String? before, int limit = 24});
+
   /// Uploads a photo or video and returns its public download URL.
   Future<String> upload(String path);
 }

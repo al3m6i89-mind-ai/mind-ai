@@ -1,8 +1,8 @@
 #!/bin/bash
-# Deploys the Mind Ai push-notification function and the Firestore rules to
-# chat-f9edd from Google Cloud Shell (console.cloud.google.com, the >_ icon),
-# using your own Google account: no service-account key needed.
-# Paste this whole file into Cloud Shell and press Enter.
+# Deploys the Mind Ai push-notification function, the Firestore rules and the
+# Firestore indexes to chat-f9edd from Google Cloud Shell
+# (console.cloud.google.com, the >_ icon), using your own Google account:
+# no service-account key needed. Paste this whole file into Cloud Shell and press Enter.
 set -e
 PROJECT=chat-f9edd
 rm -rf ~/mindai-deploy && mkdir -p ~/mindai-deploy/functions ~/mindai-deploy/firebase && cd ~/mindai-deploy
@@ -10,7 +10,7 @@ gcloud config set project "$PROJECT" >/dev/null
 
 cat > firebase.json <<'__MINDAI_CFG__'
 {
-  "firestore": { "rules": "firebase/firestore.rules" },
+  "firestore": { "rules": "firebase/firestore.rules", "indexes": "firebase/firestore.indexes.json" },
   "functions": [{ "source": "functions", "codebase": "default", "runtime": "nodejs20" }]
 }
 __MINDAI_CFG__
@@ -298,6 +298,39 @@ service cloud.firestore {
 }
 __MINDAI_RULES__
 
+cat > firebase/firestore.indexes.json <<'__MINDAI_INDEXES__'
+{
+  "indexes": [
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "authorId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "collectionGroup": "posts",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "kind", "order": "ASCENDING" },
+        { "fieldPath": "authorId", "order": "ASCENDING" },
+        { "fieldPath": "createdAt", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
+__MINDAI_INDEXES__
+
 # The function must run where the database lives.
 LOC=$(gcloud firestore databases describe --database='(default)' --format='value(locationId)' 2>/dev/null || true)
 case "$LOC" in
@@ -310,5 +343,5 @@ echo "FN_REGION=$REGION" > functions/.env
 echo ">> Firestore: ${LOC:-?}  ->  function region: $REGION"
 
 (cd functions && npm install --omit=dev --no-audit --no-fund --loglevel=error)
-npx --yes firebase-tools@14 deploy --only functions,firestore:rules --project "$PROJECT" --force
-echo ">> DONE: push notifications are live."
+npx --yes firebase-tools@14 deploy --only functions,firestore --project "$PROJECT" --force
+echo ">> DONE: functions, rules and indexes deployed (indexes finish building in a few minutes)."

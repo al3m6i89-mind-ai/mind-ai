@@ -32,6 +32,20 @@ class _PhotosViewState extends State<PhotosView> {
 
   Future<void> _refresh() async => setState(_snapshot);
 
+  bool _loading = false;
+
+  /// Near the end: fetch older photo posts and add the new ones below.
+  void _more() {
+    if (_loading) return;
+    _loading = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      final social = context.read<SocialService>();
+      final fresh = await moreFeedIds(social, PostKind.photo, social.photoHome, _ids);
+      if (mounted && fresh.isNotEmpty) setState(() => _ids.addAll(fresh));
+      _loading = false;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final social = context.watch<SocialService>();
@@ -43,9 +57,11 @@ class _PhotosViewState extends State<PhotosView> {
       onRefresh: _refresh,
       child: ListView.builder(
         padding: const EdgeInsets.only(bottom: 90),
-        itemCount: posts.length + 1,
+        itemCount: posts.length + 2,
         itemBuilder: (_, i) {
           if (i == 0) return const Column(children: [StoriesBar(), Divider(height: 1)]);
+          if (i >= posts.length - 1) _more();
+          if (i == posts.length + 1) return const LoadMoreFooter(kind: PostKind.photo);
           final p = posts[i - 1];
           return Column(
             children: [

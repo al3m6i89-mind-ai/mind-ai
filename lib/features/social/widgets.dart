@@ -488,3 +488,102 @@ class PostTile extends StatelessWidget {
     );
   }
 }
+
+// ---------------------------------------------------------------- infinite scroll
+
+/// Loads older pages of [kind] until [feed] shows posts not in [have] (or the
+/// server has nothing older). Returns the new IDs in feed order.
+Future<List<String>> moreFeedIds(
+  SocialService social,
+  PostKind kind,
+  Iterable<SocialPost> Function() feed,
+  List<String> have,
+) async {
+  for (var tries = 0; tries < 4 && social.canLoadMore(kind: kind); tries++) {
+    final added = await social.loadMore(kind: kind);
+    final known = have.toSet();
+    final fresh = [for (final p in feed()) if (!known.contains(p.id)) p.id];
+    if (fresh.isNotEmpty) return fresh;
+    if (added == 0) break;
+  }
+  return const [];
+}
+
+/// Bottom of a list: a spinner while older posts load, a quiet end mark
+/// when there is nothing older.
+class LoadMoreFooter extends StatelessWidget {
+  const LoadMoreFooter({super.key, this.kind, this.authorId, this.dark = false});
+  final PostKind? kind;
+  final String? authorId;
+  final bool dark;
+
+  @override
+  Widget build(BuildContext context) {
+    final social = context.watch<SocialService>();
+    if (!social.online) return const SizedBox(height: 24);
+    if (social.isLoadingMore(kind: kind, authorId: authorId)) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: SizedBox(
+            width: 24,
+            height: 24,
+            child: CircularProgressIndicator(strokeWidth: 2.5, color: dark ? Colors.white70 : null),
+          ),
+        ),
+      );
+    }
+    if (!social.canLoadMore(kind: kind, authorId: authorId)) {
+      return Padding(
+        padding: const EdgeInsets.all(20),
+        child: Center(
+          child: Text('✓ وصلت للنهاية', style: TextStyle(color: dark ? Colors.white54 : MindColors.muted, fontSize: 12)),
+        ),
+      );
+    }
+    return const SizedBox(height: 60);
+  }
+}
+
+/// Asks for older posts of a person (profile tabs) when the list is short or
+/// scrolled near its end.
+class AuthorPager extends StatefulWidget {
+  const AuthorPager({super.key, required this.kind, required this.authorId, required this.count, required this.child});
+  final PostKind kind;
+  final String authorId;
+
+  /// How many items the list shows now.
+  final int count;
+  final Widget child;
+
+  @override
+  State<AuthorPager> createState() => _AuthorPagerState();
+}
+
+class _AuthorPagerState extends State<AuthorPager> {
+  bool _asked = false;
+
+  void _more() {
+    if (_asked) return;
+    final social = context.read<SocialService>();
+    if (!social.canLoadMore(kind: widget.kind, authorId: widget.authorId)) return;
+    _asked = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await social.loadMore(kind: widget.kind, authorId: widget.authorId);
+      _asked = false;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // A short list fills itself (older posts may be outside the live window).
+    if (widget.count < SocialService.pageSize) _more();
+    return NotificationListener<ScrollNotification>(
+      onNotification: (n) {
+        if (n.metrics.extentAfter < 600) _more();
+        return false;
+      },
+      child: widget.child,
+    );
+  }
+}
