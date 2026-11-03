@@ -97,7 +97,7 @@ class HomeScreen extends StatelessWidget {
                       subtitle: 'كود كامل + APK',
                       emoji: '📱',
                       gradient: MindColors.cool,
-                      onTap: () => Shell.goTo(context, 2),
+                      onTap: () => Shell.goTo(context, 3),
                     ),
                     ToolTile(
                       title: 'ملصقات',
@@ -184,7 +184,7 @@ class HomeScreen extends StatelessWidget {
                       trailing: const Icon(Icons.arrow_back_ios_new, size: 14),
                       onTap: () {
                         if (text.startsWith('ابنِ')) {
-                          Shell.goTo(context, 2);
+                          Shell.goTo(context, 3);
                         } else {
                           _openChat(context, text: text);
                         }

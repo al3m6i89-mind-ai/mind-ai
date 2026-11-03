@@ -1,0 +1,222 @@
+rules_version = '2';
+
+// Security rules for the Mind Ai Community.
+// Paste into Firebase console → Firestore Database → Rules → Publish.
+//
+// One login (Firebase Auth) = one unified ID (MA-XXXX-XXXX-X), linked in /uids.
+// Everyone signed in can read the public data; each person can only write
+// their own things, and on other people's documents can only add or remove
+// their own ID (a like, a follow, a view), never anything else.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    // The unified ID of the person making the request.
+    function myId() {
+      return get(/databases/$(database)/documents/uids/$(request.auth.uid)).data.id;
+    }
+
+    // Moderators: a document /admins/{authUid}, added by hand in the console.
+    function isAdmin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    // A suspended account can still read, but can't post or interact.
+    function active() {
+      return !get(/databases/$(database)/documents/users/$(myId())).data.get('suspended', false);
+    }
+
+    function changed() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // An array changed only by adding or removing the requester's own ID.
+    function onlyMe(field) {
+      let before = resource.data.get(field, []).toSet();
+      let after = request.resource.data.get(field, []).toSet();
+      let me = [myId()].toSet();
+      return after == before.union(me) || after == before.difference(me);
+    }
+
+    function onlyMeRemoved(field) {
+      return request.resource.data.get(field, []).toSet()
+        == resource.data.get(field, []).toSet().difference([myId()].toSet());
+    }
+
+    // ---------------------------------------------------------------- identity
+
+    match /uids/{uid} {
+      allow read: if signedIn() && request.auth.uid == uid;
+      // Linked once, never moved to another ID.
+      allow create: if signedIn() && request.auth.uid == uid
+        && request.resource.data.keys().hasOnly(['id']);
+    }
+
+    match /handles/{handle} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.id == getAfter(/databases/$(database)/documents/uids/$(request.auth.uid)).data.id;
+      allow update: if signedIn() && resource.data.id == myId() && request.resource.data.id == myId();
+      allow delete: if signedIn() && resource.data.id == myId();
+    }
+
+    match /users/{id} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.id == id
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.verified == false
+        && request.resource.data.get('suspended', false) == false
+        && getAfter(/databases/$(database)/documents/uids/$(request.auth.uid)).data.id == id
+        && getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.id == id;
+      allow update: if signedIn() && (
+        // The owner edits their profile; the ID, login link and badge stay fixed,
+        // and a new @handle must already be claimed by them.
+        (resource.data.authUid == request.auth.uid
+          && !changed().hasAny(['id', 'authUid', 'verified', 'suspended', 'joined', 'local'])
+          && (!changed().hasAny(['handle'])
+            || getAfter(/databases/$(database)/documents/handles/$(request.resource.data.handle)).data.id == id))
+        // A moderator suspends or verifies.
+        || (isAdmin() && changed().hasOnly(['suspended', 'verified']))
+        // Someone else follows / unfollows: only their own ID in "followers".
+        || (changed().hasOnly(['followers']) && active() && onlyMe('followers'))
+        // Someone blocks them: removes only their own ID from "following".
+        || (changed().hasOnly(['following']) && onlyMeRemoved('following'))
+      );
+      allow delete: if false;
+    }
+
+    // ---------------------------------------------------------------- content
+
+    match /posts/{pid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.id == pid
+        && request.resource.data.authorId == myId()
+        && active()
+        && request.resource.data.get('hidden', false) == false
+        && request.resource.data.kind in ['reel', 'photo', 'post']
+        && request.resource.data.text.size() <= 2200
+        && (request.resource.data.kind != 'post' || request.resource.data.text.size() <= 280)
+        && request.resource.data.likes.size() == 0
+        && request.resource.data.saves.size() == 0
+        && request.resource.data.viewers.size() == 0
+        && request.resource.data.views == 0
+        && request.resource.data.shares == 0;
+      allow update: if signedIn() && (
+        (resource.data.authorId == myId() && changed().hasOnly(['text', 'commentsOff']))
+        || (isAdmin() && changed().hasOnly(['hidden']))
+        || (changed().hasOnly(['likes']) && onlyMe('likes'))
+        || (changed().hasOnly(['saves']) && onlyMe('saves'))
+        // A view counts once per person.
+        || (changed().hasOnly(['viewers', 'views'])
+          && !(myId() in resource.data.viewers)
+          && request.resource.data.viewers.toSet() == resource.data.viewers.toSet().union([myId()].toSet())
+          && request.resource.data.views == resource.data.views + 1)
+        || (changed().hasOnly(['shares']) && request.resource.data.shares == resource.data.shares + 1)
+      );
+      allow delete: if signedIn() && (resource.data.authorId == myId() || isAdmin());
+    }
+
+    match /comments/{cid} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.id == cid
+        && request.resource.data.authorId == myId()
+        && active()
+        && request.resource.data.get('hidden', false) == false
+        && request.resource.data.text.size() <= 500
+        && request.resource.data.likes.size() == 0
+        && get(/databases/$(database)/documents/posts/$(request.resource.data.postId)).data.get('commentsOff', false) == false;
+      allow update: if signedIn() && (
+        (changed().hasOnly(['likes']) && onlyMe('likes'))
+        || (isAdmin() && changed().hasOnly(['hidden']))
+      );
+      // The writer, the owner of the post, or a moderator.
+      allow delete: if signedIn() && (resource.data.authorId == myId() || isAdmin()
+        || get(/databases/$(database)/documents/posts/$(resource.data.postId)).data.authorId == myId());
+    }
+
+    match /stories/{sid} {
+      allow read: if signedIn();
+      allow create: if signedIn() && request.resource.data.authorId == myId() && active()
+        && request.resource.data.seenBy.size() == 0 && request.resource.data.likes.size() == 0;
+      allow update: if signedIn() && (
+        (changed().hasOnly(['seenBy']) && onlyMe('seenBy'))
+        || (changed().hasOnly(['likes']) && onlyMe('likes'))
+      );
+      allow delete: if signedIn() && (resource.data.authorId == myId() || isAdmin());
+    }
+
+    // ---------------------------------------------------------------- reports & moderation
+
+    match /admins/{uid} {
+      // Each person may check whether they are a moderator; only the console adds them.
+      allow read: if signedIn() && request.auth.uid == uid;
+      allow write: if false;
+    }
+
+    // One report per person per item (the ID is reporter_type_target). Only
+    // moderators read them and change their status.
+    match /reports/{rid} {
+      allow create: if signedIn()
+        && request.resource.data.reporterId == myId()
+        && rid == myId() + '_' + request.resource.data.targetType + '_' + request.resource.data.targetId
+        && request.resource.data.targetType in ['post', 'comment', 'story', 'user']
+        && request.resource.data.reason in ['spam', 'nudity', 'violence', 'harassment', 'hate', 'falseInfo', 'scam', 'selfHarm', 'copyright', 'impersonation', 'other']
+        && request.resource.data.status == 'open'
+        && request.resource.data.note.size() <= 500;
+      allow read: if isAdmin();
+      allow update: if isAdmin() && changed().hasOnly(['status', 'handledBy', 'handledAt']);
+      allow delete: if isAdmin();
+    }
+
+    // ---------------------------------------------------------------- push notifications
+
+    // A phone's push token, so the server can reach it. Only the server reads these.
+    match /tokens/{token} {
+      allow read: if false;
+      allow create, update: if signedIn()
+        && request.resource.data.authUid == request.auth.uid
+        && request.resource.data.id == myId();
+      allow delete: if signedIn() && resource.data.authUid == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------------- notifications & messages
+
+    match /notices/{nid} {
+      allow read: if signedIn() && resource.data.toId == myId();
+      allow create: if signedIn() && request.resource.data.fromId == myId() && request.resource.data.toId != myId();
+      allow update: if signedIn() && (
+        (resource.data.fromId == myId() && request.resource.data.fromId == myId()
+          && request.resource.data.toId == resource.data.toId)
+        || (resource.data.toId == myId() && changed().hasOnly(['read']))
+      );
+      allow delete: if signedIn() && (resource.data.toId == myId() || resource.data.fromId == myId());
+    }
+
+    match /chats/{key} {
+      allow read: if signedIn() && myId() in resource.data.members;
+      allow create: if signedIn() && myId() in request.resource.data.members
+        && request.resource.data.members.size() == 2;
+      // Each person only moves their own "read up to" mark.
+      allow update: if signedIn() && myId() in resource.data.members
+        && changed().hasOnly(['readAt'])
+        && request.resource.data.readAt.diff(resource.data.get('readAt', {})).affectedKeys().hasOnly([myId()]);
+    }
+
+    match /messages/{mid} {
+      allow read: if signedIn() && myId() in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.fromId == myId()
+        && active()
+        && myId() in request.resource.data.members
+        && request.resource.data.members.size() == 2
+        && request.resource.data.text.size() <= 1000;
+      allow update, delete: if false;
+    }
+  }
+}
