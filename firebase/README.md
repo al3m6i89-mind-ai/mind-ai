@@ -74,3 +74,12 @@ Google تطلب الآن خطة **Blaze** لتفعيل Storage. تحتاج إض�
 6. ثبّت الـ APK الجديد ← افتح «مجتمع» ← اسمح بالإشعارات.
 
 **التجربة**: من حساب على جوال آخر تابِع حسابك أو راسله وتطبيقك مغلق، فيصل الإشعار خلال ثوانٍ. الضغط عليه يفتح المحادثة أو قائمة الإشعارات.
+
+### الطريقة الأسهل للنشر: Google Cloud Shell (بدون مفتاح)
+بدلاً من الخطوات 2–5 أعلاه:
+1. افتح [`cloudshell-deploy.sh`](cloudshell-deploy.sh) ← **Raw** ← انسخ كل المحتوى.
+2. افتح https://shell.cloud.google.com/?project=chat-f9edd وسجّل بنفس حساب Firebase.
+3. الصق السكربت ← Enter. ينتهي بسطر `>> DONE: push notifications are live.`
+
+إذا ظهر خطأ فيه `firebase login`: نفّذ `npx firebase-tools login --no-localhost` ثم أعد آخر أمر.
+أعد تشغيل السكربت بعد أي تعديل على `functions/` أو `firestore.rules`.
