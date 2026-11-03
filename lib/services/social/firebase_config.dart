@@ -3,7 +3,7 @@ import 'package:firebase_core/firebase_core.dart';
 /// Your Firebase project's Android app settings.
 ///
 /// Firebase console → ⚙️ Project settings → General → "Your apps" → the
-/// Android app `com.mindai.mind_ai`. These values are not secrets: the
+/// Android app `com.zuhair.chat`. These values are not secrets: the
 /// security rules in `firebase/firestore.rules` and `firebase/storage.rules`
 /// are what protect the data.
 ///

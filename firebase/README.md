@@ -10,7 +10,7 @@
 
 ## 2) أضف تطبيق أندرويد
 1. في صفحة المشروع اضغط أيقونة **Android**.
-2. **Android package name** اكتب بالضبط: `com.mindai.mind_ai`
+2. **Android package name** اكتب بالضبط: `com.zuhair.chat`
 3. App nickname: `Mind Ai` ← **Register app**.
 4. اضغط **Download google-services.json** واحفظه (ستحتاج محتواه في الخطوة 6). بعدها اضغط **Next** ثم **Next** ثم **Continue to console** (لا تحتاج تعديل ملفات Gradle، التطبيق يتصل بدونها).
 
