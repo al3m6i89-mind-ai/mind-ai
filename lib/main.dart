@@ -14,6 +14,8 @@ import 'services/chat_service.dart';
 import 'services/code_service.dart';
 import 'services/library_service.dart';
 import 'services/settings_service.dart';
+import 'services/social/social_service.dart';
+import 'services/social/social_store.dart';
 import 'services/subscription_service.dart';
 
 Future<void> main() async {
@@ -27,6 +29,9 @@ Future<void> main() async {
   final code = CodeService(text, subs, settings);
   await code.init();
   subs.init();
+  final social = SocialService(FileSocialStore());
+  // Loads in the background; the Community tab shows a spinner until ready.
+  social.init();
 
   runApp(
     MultiProvider(
@@ -35,6 +40,7 @@ Future<void> main() async {
         ChangeNotifierProvider.value(value: subs),
         ChangeNotifierProvider.value(value: library),
         ChangeNotifierProvider.value(value: code),
+        ChangeNotifierProvider.value(value: social),
         ChangeNotifierProvider(create: (_) => ChatService(settings.prefs, text, images, subs, library, settings)),
         ChangeNotifierProvider(create: (_) => BuildService(settings)),
         Provider.value(value: text),
