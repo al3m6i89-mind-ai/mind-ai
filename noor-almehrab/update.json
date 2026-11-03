@@ -1,8 +1,8 @@
 {
-  "versionCode": 16,
-  "versionName": "1.7.4",
+  "versionCode": 17,
+  "versionName": "1.7.5",
   "apkUrl": "https://raw.githubusercontent.com/al3m6i89-mind-ai/mind-ai/builds/noor-almehrab/NoorAlmehrab.apk",
-  "releasedAt": 1793682540000,
-  "notes_ar": "• إضافة سياسة الخصوصية داخل التطبيق\n• إفصاح عن استخدام الموقع عند أول تشغيل\n• تحسينات توافق Google Play",
-  "notes_en": "• Privacy policy link added in-app\n• Location disclosure shown on first launch\n• Google Play compliance improvements"
+  "releasedAt": 1793694300000,
+  "notes_ar": "• نافذة موافقة على الإعلانات المخصصة\n• دعم Android 15 — targetSdk 35\n• تحسينات توافق Google Play",
+  "notes_en": "• Personalised ad consent dialog\n• Android 15 support — targetSdk 35\n• Google Play compliance improvements"
 }
