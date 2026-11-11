@@ -1,7 +1,7 @@
 {
-  "version": "1.10.0",
-  "build": 41,
+  "version": "1.10.2",
+  "build": 44,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• ردود أسرع بكثير: يبدأ الجواب خلال ثوانٍ\n• الملفات الكبيرة والصور تُجهَّز فور إضافتها\n• يدقق في كل الملفات والصور المرفقة ويذكر مصدر كل معلومة\n• التطبيق أخف وأسرع في الفتح",
-  "notes_en": "• Much faster replies: answers start within seconds\n• Big files and images get ready as soon as you add them\n• Checks every attached file and image and names the source of each fact\n• Lighter app that opens faster"
+  "notes_ar": "• لا انتظار بعد اليوم: إذا تأخر خادم يرد خادم آخر خلال ثوانٍ\n• ردود أسرع مع الملفات الكبيرة والصور\n• يدقق في كل الملفات والصور المرفقة ويذكر مصدر كل معلومة\n• التطبيق أخف وأسرع في الفتح",
+  "notes_en": "• No more waiting: if one server is slow another answers within seconds\n• Faster replies with big files and images\n• Checks every attached file and image and names the source of each fact\n• Lighter app that opens faster"
 }
