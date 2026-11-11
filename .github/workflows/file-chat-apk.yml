@@ -97,6 +97,7 @@ jobs:
           echo "privacy page: $(curl -s -o /dev/null -w '%{http_code}' "$URL/privacy")"
           echo "delete page: $(curl -s -o /dev/null -w '%{http_code}' "$URL/delete")"
           echo "voice path: $(curl -s -o /dev/null -w '%{http_code}' -X POST "$URL/q/v1/audio/transcriptions" -H "x-app-token: $APP_TOKEN")"
+          URL="$URL" CI_KEY="$GEMINI_KEYS" node proxy/tools/latency.mjs || true
 
   build:
     needs: proxy
