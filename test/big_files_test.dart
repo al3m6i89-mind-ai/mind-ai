@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -159,6 +160,27 @@ void main() {
           store.addAttachmentFrom('x.pdf', 4, () => Stream.value([1, 2, 3, 4]), 'محادثة'), throwsA(isA<AttachRejected>()));
       expect(store.pending, isEmpty);
       expect(store.processing, 0);
+    });
+
+    test('a big book\'s text is kept in its own file and read only when needed', () async {
+      final text = book(300);
+      await store.addAttachmentFrom('كتاب.txt', text.length, () => Stream.value(text.codeUnits.isEmpty ? [] : utf8.encode(text)),
+          'محادثة جديدة');
+      final a = store.pending.single;
+      expect(a.textFile, isNotNull);
+      expect(File(a.textFile!).readAsStringSync(), text);
+      final back = Attachment.fromJson(jsonDecode(jsonEncode(a.toJson())) as Map<String, dynamic>);
+      expect(jsonEncode(a.toJson()).length, lessThan(2000), reason: 'the chat file stays small');
+      expect(back.extractedText, text);
+    });
+
+    test('older chats with the text inside move it out', () {
+      final dir = Directory.systemTemp.createTempSync('mv');
+      final a = Attachment(id: 'x', name: 'b.pdf', ext: 'pdf', size: 1, path: '${dir.path}/x.pdf', extractedText: book(100));
+      expect(a.moveTextToFile(), isTrue);
+      expect(a.moveTextToFile(), isFalse);
+      expect(a.toJson().containsKey('text'), isFalse);
+      expect(a.extractedText, book(100));
     });
 
     testWidgets('the ring shows the percentage and the page being read', (t) async {

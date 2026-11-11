@@ -145,6 +145,34 @@ class AppStore extends ChangeNotifier {
   String? _deviceId;
   final Map<String, String> _questionIds = {};
 
+  /// Big files start uploading as soon as they are attached; the question that
+  /// follows reuses this id, so the upload and the question count as one.
+  String? _nextQuestionId;
+  final Map<String, Future<void>> _uploads = {};
+
+  AiClient _client(Map<String, String> session) => AiClient(
+        session: session,
+        onQuotaLeft: _serverLeft,
+        preferPro: premium,
+        geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
+        onModelChanged: (m) => _prefs.setString('geminiModel', m),
+      );
+
+  void _preUpload(Attachment a) {
+    if (!AiClient.needsUpload(a) || !canAsk || !Proxy.build.enabled) return;
+    final qid = _nextQuestionId ??= _uuid.v4();
+    final slot = [...pending, ...?current?.attachments].map((x) => x.geminiSlot).nonNulls.firstOrNull;
+    _uploads[a.id] = () async {
+      try {
+        await _client(await aiSession(questionId: qid)).prepare(a, slot: slot);
+      } catch (e) {
+        debugPrint('pre-upload ${a.name}: $e');
+      } finally {
+        _uploads.remove(a.id);
+      }
+    }();
+  }
+
   /// What the proxy needs to know who is asking (see [AiClient.session]).
   Future<Map<String, String>> aiSession({String kind = 'ask', String? questionId}) async {
     String? token;
@@ -277,6 +305,7 @@ class AppStore extends ChangeNotifier {
           if (m.status == MsgStatus.streaming) m.status = MsgStatus.stopped;
         }
         conversations.add(c);
+        if (c.attachments.map((a) => a.moveTextToFile()).toList().contains(true)) await _save(c);
       } catch (_) {
         // A damaged file is skipped rather than blocking the whole app.
       }
@@ -356,8 +385,9 @@ class AppStore extends ChangeNotifier {
     for (final m in c.messages) {
       m.attachments.removeWhere((x) => x.id == a.id);
     }
-    final f = File(a.path);
-    if (await f.exists()) await f.delete();
+    for (final f in [File(a.path), File('${a.path}.txt')]) {
+      if (await f.exists()) await f.delete();
+    }
     await _save(c);
     notifyListeners();
   }
@@ -465,18 +495,28 @@ class AppStore extends ChangeNotifier {
               _progress('read', copyShare + (1 - copyShare) * (total == 0 ? 1 : done / total), done: done, total: total);
             });
       _progress('read', 1);
-      pending.add(Attachment(
+      // A big book's text gets its own file, read only when it is asked about.
+      final text = result.text;
+      String? textFile;
+      if (text != null && text.length > Attachment.ownFileChars) {
+        textFile = '${file.path}.txt';
+        await File(textFile).writeAsString(text, flush: true);
+      }
+      final added = Attachment(
         id: id,
         name: name,
         ext: ext,
         size: size,
         path: file.path,
-        extractedText: result.text,
+        extractedText: text,
+        textFile: textFile,
         note: result.note,
         pages: result.pages,
         textPages: result.textPages,
-      ));
+      );
+      pending.add(added);
       keep = true;
+      _preUpload(added);
     } finally {
       if (!keep && file != null) {
         try {
@@ -531,15 +571,17 @@ class AppStore extends ChangeNotifier {
 
   Future<void> removePending(Attachment a) async {
     pending.remove(a);
-    final f = File(a.path);
-    if (await f.exists()) await f.delete();
+    for (final f in [File(a.path), File('${a.path}.txt')]) {
+      if (await f.exists()) await f.delete();
+    }
     notifyListeners();
   }
 
   void _discardPending() {
     for (final a in pending) {
-      final f = File(a.path);
-      if (f.existsSync()) f.deleteSync();
+      for (final f in [File(a.path), File('${a.path}.txt')]) {
+        if (f.existsSync()) f.deleteSync();
+      }
     }
     pending.clear();
   }
@@ -552,7 +594,8 @@ class AppStore extends ChangeNotifier {
     if (!canAsk) return false;
     _countQuestion();
     final conv = await _ensureConversation(defaultTitle);
-    _questionIds[conv.id] = _uuid.v4();
+    _questionIds[conv.id] = _nextQuestionId ?? _uuid.v4();
+    _nextQuestionId = null;
     final userMsg = Message(id: _uuid.v4(), role: Role.user, text: t, attachments: List.of(pending));
     pending.clear();
     conv.messages.add(userMsg);
@@ -587,16 +630,18 @@ class AppStore extends ChangeNotifier {
     conv.updatedAt = DateTime.now();
     _sort();
     final session = await aiSession(questionId: _questionIds[conv.id]);
-    final client = AiClient(
-      session: session,
-      onQuotaLeft: _serverLeft,
-      preferPro: premium,
-      geminiModel: _prefs.getString('geminiModel') ?? AiClient.defaultGeminiModel,
-      onModelChanged: (m) => _prefs.setString('geminiModel', m),
-    );
-    final stream = client.reply(conv);
+    final client = _client(session);
     conv.messages.add(reply);
     notifyListeners();
+    // A big file still uploading from when it was attached: finish that first.
+    final waits = [for (final a in conv.attachments) ?_uploads[a.id]];
+    if (waits.isNotEmpty) {
+      reply.note = 'reading';
+      notifyListeners();
+      await Future.wait(waits);
+      reply.note = null;
+    }
+    final stream = client.reply(conv);
 
     final done = _done = Completer<void>();
     _stream = stream.listen(

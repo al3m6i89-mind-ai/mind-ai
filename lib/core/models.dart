@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 enum Role { user, assistant }
 
@@ -13,7 +14,8 @@ class Attachment {
     required this.ext,
     required this.size,
     required this.path,
-    this.extractedText,
+    String? extractedText,
+    this.textFile,
     this.note,
     this.geminiUri,
     this.geminiUriExpires,
@@ -21,14 +23,50 @@ class Attachment {
     this.pages,
     this.textPages,
     DateTime? createdAt,
-  }) : createdAt = createdAt ?? DateTime.now();
+  })  : _text = extractedText,
+        _textRead = textFile == null || extractedText != null,
+        createdAt = createdAt ?? DateTime.now();
 
   final String id;
   final String name;
   final String ext;
   final int size;
   final String path;
-  final String? extractedText;
+  /// The text read on the phone. A big book's text lives in its own file
+  /// ([textFile]) and is read only when a question needs it, so opening the
+  /// app does not load every book into memory.
+  String? get extractedText {
+    if (!_textRead) {
+      _textRead = true;
+      try {
+        _text = File(textFile!).readAsStringSync();
+      } catch (_) {}
+    }
+    return _text;
+  }
+
+  String? _text;
+  bool _textRead;
+  String? textFile;
+
+  /// Moves a big text that older versions kept inside the chat file into its
+  /// own file. Returns true when the chat needs saving.
+  bool moveTextToFile() {
+    final t = _text;
+    if (textFile != null || t == null || t.length <= ownFileChars) return false;
+    try {
+      File('$path.txt').writeAsStringSync(t, flush: true);
+      textFile = '$path.txt';
+      _text = null; // read again from the file when a question needs it
+      _textRead = false;
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  /// Texts longer than this are kept in their own file.
+  static const ownFileChars = 20000;
 
   /// Why the content could not be read, if it could not.
   final String? note;
@@ -83,7 +121,7 @@ class Attachment {
         'ext': ext,
         'size': size,
         'path': path,
-        if (extractedText != null) 'text': extractedText,
+        if (textFile != null) 'textFile': textFile else if (_text != null) 'text': _text,
         if (note != null) 'note': note,
         if (geminiUri != null) 'geminiUri': geminiUri,
         if (geminiUriExpires != null) 'geminiUriExpires': geminiUriExpires!.toIso8601String(),
@@ -100,6 +138,7 @@ class Attachment {
         size: j['size'] as int,
         path: j['path'] as String,
         extractedText: j['text'] as String?,
+        textFile: j['textFile'] as String?,
         note: j['note'] as String?,
         geminiUri: j['geminiUri'] as String?,
         geminiUriExpires: DateTime.tryParse(j['geminiUriExpires'] as String? ?? ''),

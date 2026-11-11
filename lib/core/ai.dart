@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:http/http.dart' as http;
@@ -57,6 +58,7 @@ When the file itself answers the question (a textbook, teacher's guide, exam, wo
 Numbers in PDF text can come out reversed or run together (for example "٥٣٢٤١٠٣٢٥" for "٣٢٤١ < ٣٢٥٠"); read them from their context and write them cleanly, in the digits the user used.
 
 When files or images are attached to the conversation, every answer about them must come from their content and nothing else:
+- Several files and images may be attached, across the whole conversation, each labelled with its number and name ("ملف مرفق 2/5"). Check every one of them for the answer, not only the newest or the first that matches. When the answer uses more than one, combine them and name each file (and page) in the source line. When the user names a file or image, answer from that one.
 - Read the whole file before answering: every page, slide, sheet, table, header, footnote and every part of an image. When the question asks for all items, totals or a list, include every one that appears.
 - Copy numbers, amounts, dates, names, codes and quotes exactly as written, with the same digits, currency and units. Never round, convert or "correct" them. If you calculate something, show the values you used in one line.
 - Never add facts, figures or assumptions that are not in the files, and never fill gaps from general knowledge. If something is partly there, give the part that is there and say what is missing.
@@ -256,8 +258,10 @@ class AiClient {
     return [
       if (gemini.isNotEmpty)
         for (final m in {
-          if (preferPro && gemini.contains('gemini-pro-latest')) 'gemini-pro-latest',
+          // Flash answers first for everyone: it is several times faster than Pro.
+          // The paid plan has Pro right behind it when Flash is busy.
           if (gemini.contains(defaultGeminiModel)) geminiModel,
+          if (preferPro && gemini.contains('gemini-pro-latest')) 'gemini-pro-latest',
           ...gemini,
         })
           Attempt(Backend.gemini, m, 'g'),
@@ -344,6 +348,10 @@ class AiClient {
           ..headers.addAll({'Content-Type': 'application/json', ..._headers(a, slot)})
           ..body = jsonEncode({
             'contents': contents,
+            if (_thinkingBudget(a.model) case final b?)
+              'generationConfig': {
+                'thinkingConfig': {'thinkingBudget': b},
+              },
             'systemInstruction': {
               'parts': [
                 {'text': system},
@@ -428,12 +436,24 @@ class AiClient {
     }
   }
 
+  /// Flash thinks briefly before answering: enough to find the right page and
+  /// check numbers, without the long silence of unlimited thinking. Pro cannot
+  /// turn thinking down this far and Flash-Lite does not think by default.
+  static bool _thinkingAllowed = true;
+  static int? _thinkingBudget(String model) =>
+      _thinkingAllowed && model.contains('flash') && !model.contains('lite') ? 512 : null;
+
   _Fail _failFor(Attempt a, int code, String body, Map<String, String> headers) {
     var msg = body;
     try {
       msg = (jsonDecode(body)['error']?['message'] as String?) ?? body;
     } catch (_) {}
     final detail = 'HTTP $code ${_short(msg)}';
+    if (code == 400 && a.backend == Backend.gemini && msg.toLowerCase().contains('thinking') && _thinkingAllowed) {
+      // A model that refuses the setting is asked again without it.
+      _thinkingAllowed = false;
+      return _Fail('busy', retryable: true, detail: detail);
+    }
     // The proxy's own answers are marked, so they are not mistaken for the service's.
     if (headers['x-proxy-error'] == 'token') return _Fail('busy', proxyDead: true, detail: detail);
     if (headers['x-proxy-error'] == 'quota') {
@@ -496,13 +516,12 @@ class AiClient {
         // Gemini reads PDFs up to 50 MB. Bigger ones, and big PDFs that are all
         // text, go as the text read on the phone: the pages that answer the
         // question, which is much faster than uploading and reading the book.
-        final asText = !a.sentAsBinary || (a.isPdf && (a.size > maxGeminiPdf || (a.size > maxInlineFile && a.textual)));
-        final bytes = asText ? null : await _bytes(a);
+        final bytes = sendsText(a) ? null : await _bytes(a);
         if (bytes == null) {
-          parts.add({'text': _asText(a, conv)});
+          parts.add({'text': await _asText(a, conv)});
         } else if (bytes.length <= maxInlineFile && inlineBytes + bytes.length <= maxInlineBytes) {
           inlineBytes += bytes.length;
-          parts.add({'text': '[ملف مرفق: ${a.name}]'});
+          parts.add({'text': '[${a.isImage ? 'صورة مرفقة' : 'ملف مرفق'}${_no(a, conv)}: ${a.name}]'});
           parts.add({
             'inline_data': {'mime_type': a.mime, 'data': base64Encode(bytes)},
           });
@@ -510,7 +529,7 @@ class AiClient {
           // Big files go through Gemini's file store, which takes PDFs up to 50 MB.
           final (uri, s) = await _geminiFile(via, a, bytes, slot);
           slot = s;
-          parts.add({'text': '[ملف مرفق: ${a.name}]'});
+          parts.add({'text': '[${a.isImage ? 'صورة مرفقة' : 'ملف مرفق'}${_no(a, conv)}: ${a.name}]'});
           parts.add({
             'file_data': {'mime_type': a.mime, 'file_uri': uri},
           });
@@ -525,6 +544,23 @@ class AiClient {
       }
     }
     return (contents, slot);
+  }
+
+  /// Sent as the text read on the phone rather than the original file.
+  static bool sendsText(Attachment a) =>
+      !a.sentAsBinary || (a.isPdf && (a.size > maxGeminiPdf || (a.size > maxInlineFile && a.textual)));
+
+  /// Goes through Gemini's file store, which takes a while for big files.
+  static bool needsUpload(Attachment a) => a.sentAsBinary && !sendsText(a) && a.size > maxInlineFile;
+
+  /// Uploads a big file as soon as it is attached, while the user types the
+  /// question, so the answer does not wait for it. [slot] keeps every file of a
+  /// chat on one proxy key, which is the only key that can read them.
+  Future<void> prepare(Attachment a, {int? slot}) async {
+    if (!proxy.enabled || !needsUpload(a)) return;
+    final bytes = await _bytes(a);
+    if (bytes == null) return;
+    await _geminiFile(Attempt(Backend.gemini, geminiModel, 'g'), a, bytes, slot);
   }
 
   /// Uploads [a] to Gemini's file store once (resumable upload) and waits until
@@ -617,13 +653,13 @@ class AiClient {
         final bytes = a.isImage && images ? await _bytes(a) : null;
         if (bytes != null) {
           final url = 'data:${a.mime};base64,${base64Encode(bytes)}';
-          parts.add({'type': 'text', 'text': '[صورة مرفقة: ${a.name}]'});
+          parts.add({'type': 'text', 'text': '[صورة مرفقة${_no(a, conv)}: ${a.name}]'});
           parts.add({
             'type': 'image_url',
             'image_url': stringImages ? url : {'url': url},
           });
         } else {
-          parts.add({'type': 'text', 'text': _asText(a, conv)});
+          parts.add({'type': 'text', 'text': await _asText(a, conv)});
         }
       }
       if (m.text.trim().isNotEmpty) parts.add({'type': 'text', 'text': m.text});
@@ -651,14 +687,40 @@ class AiClient {
     return await f.exists() ? f.readAsBytes() : null;
   }
 
-  String _asText(Attachment a, Conversation conv) {
+  /// Each file's text for this reply, worked out once and reused by every
+  /// server in the chain.
+  final Map<String, String> _texts = {};
+
+  /// Characters of text each file may send: big books share one budget, so
+  /// five of them answer as fast as one.
+  static int textBudget(Conversation conv) {
+    final n = conv.attachments.where((a) => (a.extractedText ?? '').trim().isNotEmpty).length;
+    return n <= 1 ? retrievalBudget : (retrievalBudget * 1.5 ~/ n).clamp(14000, retrievalBudget);
+  }
+
+  /// " 2/5" when several files are attached, so answers can say which one.
+  static String _no(Attachment a, Conversation conv) {
+    final files = conv.attachments.toList();
+    return files.length > 1 ? ' ${files.indexOf(a) + 1}/${files.length}' : '';
+  }
+
+  Future<String> _asText(Attachment a, Conversation conv) async {
+    final key = '${a.id}:${conv.messages.length}';
+    final cached = _texts[key];
+    if (cached != null) return cached;
     final text = a.extractedText;
+    final no = _no(a, conv);
     if (text != null && text.trim().isNotEmpty) {
       final asks = [for (final m in conv.messages) if (m.role == Role.user && m.text.trim().isNotEmpty) m.text];
-      final r = relevant(text,
-          asks.isEmpty ? '' : asks.last, context: asks.length > 1 ? asks[asks.length - 2] : '', budget: retrievalBudget);
-      if (r.whole) return '[ملف مرفق: ${a.name} (${a.typeLabel})]\n$text\n[نهاية الملف: ${a.name}]';
-      return '[ملف مرفق: ${a.name} (${a.typeLabel}) — ملف كبير، هذه ${r.shown} من أصل ${r.total} '
+      final q = asks.isEmpty ? '' : asks.last;
+      final ctx = asks.length > 1 ? asks[asks.length - 2] : '';
+      final budget = textBudget(conv);
+      // Searching a big book takes a moment; it runs off the screen's thread.
+      final r = text.length <= budget
+          ? relevant(text, q, context: ctx, budget: budget)
+          : await Isolate.run(() => relevant(text, q, context: ctx, budget: budget));
+      if (r.whole) return _texts[key] = '[ملف مرفق$no: ${a.name} (${a.typeLabel})]\n$text\n[نهاية الملف: ${a.name}]';
+      return _texts[key] = '[ملف مرفق$no: ${a.name} (${a.typeLabel}) — ملف كبير، هذه ${r.shown} من أصل ${r.total} '
           '${a.isPdf ? 'صفحة' : 'جزء'} هي الأكثر صلة بالسؤال الأخير. أجب منها واذكر رقم الصفحة. '
           'إذا لم تجد الإجابة فيها فقل ذلك، واقترح على المستخدم كلمات أدق أو رقم الصفحة.]\n'
           '${r.text}\n[نهاية المقتطفات من: ${a.name}]';

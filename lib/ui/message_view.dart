@@ -200,7 +200,7 @@ class MessageView extends StatelessWidget {
     ));
   }
 
-  String _note(String note) => s.t('waitingRetry');
+  String _note(String note) => note == 'reading' ? s.t('readingFiles') : s.t('waitingRetry');
 
   void _copy(BuildContext context) {
     Clipboard.setData(ClipboardData(text: message.text));

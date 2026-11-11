@@ -437,13 +437,63 @@ void main() {
     await f.stop();
   });
 
-  test('paid plan starts with Gemini Pro; the direct free server is always last', () async {
+  test('Flash answers first for speed, Pro right behind it on the paid plan; the direct free server is always last', () async {
     final f = FakeAi({}, config: gem);
     await f.start();
     final chain = await f.client(preferPro: true).chain();
-    expect(chain.first.model, 'gemini-pro-latest');
+    expect(chain.first.model, 'gemini-flash-latest');
+    expect(chain[1].model, 'gemini-pro-latest');
     expect(chain.where((a) => a.model == 'gemini-pro-latest'), hasLength(1));
     expect(chain.last.direct, isTrue);
+    await f.stop();
+  });
+
+  test('Flash is asked to think only briefly, so the answer starts quickly', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    await run(f.client(), conv());
+    expect(f.bodies['g:gemini-flash-latest']!['generationConfig']['thinkingConfig']['thinkingBudget'], 512);
+    await f.stop();
+  });
+
+  test('a big file is uploaded when attached, and the answer reuses it', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    final big = await tempFile('scan.pdf', List.filled(5 * 1024 * 1024, 32));
+    final a = Attachment(id: 'p', name: 'scan.pdf', ext: 'pdf', size: 5 * 1024 * 1024, path: big.path);
+    expect(AiClient.needsUpload(a), isTrue);
+    await f.client().prepare(a);
+    expect(f.calls, ['upload-start', 'upload', 'poll']);
+    f.calls.clear();
+    final (text, _) = await run(f.client(), conv(files: [a]));
+    expect(text, 'ok from g:gemini-flash-latest');
+    expect(f.calls, ['config', 'g:gemini-flash-latest'], reason: 'no second upload');
+    await f.stop();
+  });
+
+  test('several files: each is numbered and big books share one text budget', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    String book(String word) => [
+          for (var i = 1; i <= 200; i++) '\n[الصفحة $i / Page $i]\n${i == 50 ? word : 'Filler text about other topics. ' * 12}',
+        ].join();
+    final files = [
+      for (final (n, w) in [('a.docx', 'Alpha fact'), ('b.docx', 'Beta fact'), ('c.docx', 'Gamma fact')])
+        Attachment(id: n, name: n, ext: 'docx', size: 10, path: '/none/$n', extractedText: book(w)),
+    ];
+    final c = Conversation(id: 'c', title: 't', messages: [
+      Message(id: 'm', role: Role.user, text: 'Which fact is in each file?', attachments: files),
+    ]);
+    expect(AiClient.textBudget(c), lessThan(AiClient.retrievalBudget));
+    await run(f.client(), c);
+    final sent = jsonEncode(f.bodies['g:gemini-flash-latest']);
+    for (final n in ['1/3: a.docx', '2/3: b.docx', '3/3: c.docx']) {
+      expect(sent, contains(n));
+    }
+    for (final w in ['Alpha fact', 'Beta fact', 'Gamma fact']) {
+      expect(sent, contains(w));
+    }
+    expect(sent.length, lessThan(3 * AiClient.retrievalBudget));
     await f.stop();
   });
 
