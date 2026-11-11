@@ -45,6 +45,7 @@ async function time(model, thinking, question) {
       method: 'POST',
       headers: { 'content-type': 'application/json', 'x-app-token': APP_TOKEN, 'x-ci': CI_KEY },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(30000),
     });
     const head = Date.now() - t0;
     if (!r.ok) return `${model} think=${thinking}: HTTP ${r.status} after ${head}ms ${(await r.text()).slice(0, 160)}`;

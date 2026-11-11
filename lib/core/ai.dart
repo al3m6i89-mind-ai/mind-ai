@@ -153,6 +153,7 @@ class AiClient {
       Duration(seconds: 45),
     ],
     this.filePollInterval = const Duration(seconds: 2),
+    this.hedgeAfter = const Duration(seconds: 5),
     this.headerTimeout = const Duration(seconds: 20),
     this.idleTimeout = const Duration(seconds: 45),
     this.system = _system,
@@ -184,6 +185,11 @@ class AiClient {
   final Duration headerTimeout;
   final Duration idleTimeout;
   final Duration filePollInterval;
+
+  /// When the first server has not started answering by then, the next one
+  /// is asked at the same time and the first to answer wins. Google's Flash
+  /// sometimes hangs for minutes; the user should never wait for that.
+  final Duration hedgeAfter;
 
   /// Google's alias for its current Flash model, so the app keeps working when
   /// older versions are retired.
@@ -258,10 +264,10 @@ class AiClient {
     return [
       if (gemini.isNotEmpty)
         for (final m in {
-          // Flash answers first for everyone: it is several times faster than Pro.
-          // The paid plan has Pro right behind it when Flash is busy.
+          // Flash answers first for everyone, with Flash-Lite racing it when it
+          // is slow (see [reply]). Pro, often out of free quota, is the last Gemini resort.
           if (gemini.contains(defaultGeminiModel)) geminiModel,
-          if (preferPro && gemini.contains('gemini-pro-latest')) 'gemini-pro-latest',
+          ...gemini.where((m) => !m.contains('pro')),
           ...gemini,
         })
           Attempt(Backend.gemini, m, 'g'),
@@ -294,12 +300,15 @@ class AiClient {
         yield AiStatus('waiting');
         await Future<void>.delayed(roundPauses[round - 1]);
       }
+      final raced = <String>{};
       for (var i = 0; i < attempts.length; i++) {
         final a = attempts[i];
-        if (skip(a)) continue;
+        if (skip(a) || raced.contains('$a')) continue;
+        // The first server of a round gets a running mate if it is slow to start.
+        final mate = i == 0 ? attempts.skip(1).where((b) => !skip(b) && !b.direct).firstOrNull : null;
         var wrote = false;
         try {
-          await for (final text in _run(a, conv)) {
+          await for (final text in mate == null ? _run(a, conv) : _race(a, mate, conv, () => raced.add('$mate'))) {
             wrote = true;
             yield AiText(text);
           }
@@ -330,6 +339,90 @@ class AiClient {
         ? lastError!
         : 'busy');
   }
+
+  /// Runs [a], and [b] too if [a] has not started answering after
+  /// [hedgeAfter]; streams whichever answers first and drops the other.
+  /// A failure of [a] before that is passed on as it is, so the chain handles
+  /// it as usual. [usedB] is set when [b] was asked.
+  Stream<String> _race(Attempt a, Attempt b, Conversation conv, void Function() usedB) {
+    final out = StreamController<String>();
+    final subs = <StreamSubscription<String>>[];
+    final alive = <Attempt>{};
+    StreamSubscription<String>? winner;
+    Timer? hedge;
+    Object? aError;
+    Object? bError;
+
+    void finish(Object e) {
+      if (out.isClosed) return;
+      out.addError(e);
+      out.close();
+    }
+
+    void lost(Attempt x, Object e) {
+      alive.remove(x);
+      if (x == a) {
+        aError = e;
+      } else {
+        bError = e;
+      }
+      if (alive.isEmpty) {
+        hedge?.cancel();
+        finish(aError ?? bError!);
+      }
+    }
+
+    void start(Attempt x) {
+      alive.add(x);
+      var ended = false;
+      late final StreamSubscription<String> sub;
+      sub = _run(x, conv).listen(
+        (text) {
+          if (winner == null) {
+            winner = sub;
+            hedge?.cancel();
+            for (final o in subs) {
+              if (o != sub) _drop(o);
+            }
+          }
+          if (winner == sub) out.add(text);
+        },
+        onError: (Object e) {
+          ended = true;
+          if (winner == sub) return finish(e);
+          if (winner == null) lost(x, e);
+        },
+        onDone: () {
+          if (winner == sub) {
+            out.close();
+          } else if (winner == null && !ended) {
+            lost(x, _Fail('empty', retryable: true));
+          }
+        },
+      );
+      subs.add(sub);
+    }
+
+    out.onListen = () {
+      start(a);
+      hedge = Timer(hedgeAfter, () {
+        if (winner == null && alive.contains(a)) {
+          usedB();
+          start(b);
+        }
+      });
+    };
+    out.onCancel = () {
+      hedge?.cancel();
+      for (final s in subs) {
+        _drop(s);
+      }
+    };
+    return out.stream;
+  }
+
+  /// Stops a stream that lost the race; its late failure is of no interest.
+  static void _drop(StreamSubscription<String> s) => s.cancel().catchError((Object _) {});
 
   Map<String, String> _headers(Attempt a, [int? slot]) => {
         if (!a.direct && proxy.token.isNotEmpty) 'x-app-token': proxy.token,
@@ -566,7 +659,17 @@ class AiClient {
   /// Uploads [a] to Gemini's file store once (resumable upload) and waits until
   /// Google has processed it. The link is reused until shortly before it
   /// expires, as long as it belongs to the same key as the other files.
-  Future<(String, int?)> _geminiFile(Attempt via, Attachment a, List<int> bytes, int? slot) async {
+  /// Uploads in progress, shared so two racing servers never upload twice.
+  static final Map<String, Future<(String, int?)>> _uploading = {};
+
+  Future<(String, int?)> _geminiFile(Attempt via, Attachment a, List<int> bytes, int? slot) {
+    final key = '${a.id}:$slot';
+    return _uploading[key] ??= _upload(via, a, bytes, slot).whenComplete(() {
+      _uploading.remove(key); // not returned: whenComplete would wait on it
+    });
+  }
+
+  Future<(String, int?)> _upload(Attempt via, Attachment a, List<int> bytes, int? slot) async {
     final cached = a.geminiUri;
     final expires = a.geminiUriExpires;
     if (cached != null &&

@@ -23,17 +23,23 @@ class FakeAi {
   late HttpServer server;
 
   String get url => 'http://127.0.0.1:${server.port}';
-  AiClient client({bool preferPro = false, String model = AiClient.defaultGeminiModel, void Function(String)? onModel}) =>
-      AiClient(
-        proxy: Proxy(url, 'tok'),
-        freeUrl: '$url/direct',
-        preferPro: preferPro,
-        geminiModel: model,
-        onModelChanged: onModel,
-        roundPauses: const [Duration.zero, Duration.zero],
-        filePollInterval: Duration.zero,
-        headerTimeout: const Duration(milliseconds: 500),
-      );
+  AiClient client({
+    bool preferPro = false,
+    String model = AiClient.defaultGeminiModel,
+    void Function(String)? onModel,
+    Duration hedge = const Duration(seconds: 5),
+    Duration headerTimeout = const Duration(milliseconds: 500),
+  }) => AiClient(
+    proxy: Proxy(url, 'tok'),
+    freeUrl: '$url/direct',
+    preferPro: preferPro,
+    geminiModel: model,
+    onModelChanged: onModel,
+    roundPauses: const [Duration.zero, Duration.zero],
+    filePollInterval: Duration.zero,
+    hedgeAfter: hedge,
+    headerTimeout: headerTimeout,
+  );
 
   Future<void> start() async {
     AiClient.resetConfig();
@@ -72,9 +78,11 @@ class FakeAi {
         uploaded = (await req.fold<List<int>>([], (a, b) => a..addAll(b))).length;
         calls.add('upload');
         slots.add(req.headers.value('x-key-slot') ?? '');
-        req.response.write(jsonEncode({
-          'file': {'name': 'files/abc', 'uri': 'https://files/abc', 'state': 'PROCESSING'},
-        }));
+        req.response.write(
+          jsonEncode({
+            'file': {'name': 'files/abc', 'uri': 'https://files/abc', 'state': 'PROCESSING'},
+          }),
+        );
         await req.response.close();
         return;
       }
@@ -147,14 +155,20 @@ class FakeAi {
             })}\n\n';
       if (step is int && step != 200) {
         req.response.statusCode = step;
-        req.response.write(jsonEncode({
-          'error': {'message': step == 404 ? 'gone, use models/gemini-9-flash' : 'nope'},
-        }));
+        req.response.write(
+          jsonEncode({
+            'error': {'message': step == 404 ? 'gone, use models/gemini-9-flash' : 'nope'},
+          }),
+        );
       } else {
         req.response.headers.contentType = ContentType('text', 'event-stream');
         if (step == 'midfail') {
           req.response.write(frame('partial '));
-          req.response.write('data: ${jsonEncode({'error': {'message': 'overloaded'}})}\n\n');
+          req.response.write(
+            'data: ${jsonEncode({
+              'error': {'message': 'overloaded'},
+            })}\n\n',
+          );
         } else {
           req.response.write(frame('ok from $key'));
           if (!gemini) req.response.write('data: [DONE]\n\n');
@@ -167,8 +181,11 @@ class FakeAi {
   Future<void> stop() => server.close(force: true);
 }
 
-Conversation conv({List<Attachment> files = const []}) =>
-    Conversation(id: 'c', title: 't', messages: [Message(id: 'm', role: Role.user, text: 'hi', attachments: files)]);
+Conversation conv({List<Attachment> files = const []}) => Conversation(
+  id: 'c',
+  title: 't',
+  messages: [Message(id: 'm', role: Role.user, text: 'hi', attachments: files)],
+);
 
 /// Runs a reply and returns the final text plus the other events, as strings.
 Future<(String, List<String>)> run(AiClient ai, Conversation c) async {
@@ -224,10 +241,11 @@ void main() {
     final f = FakeAi({}, config: gem);
     await f.start();
     final ai = AiClient(
-        proxy: Proxy(f.url, 'wrong'),
-        freeUrl: '${f.url}/direct',
-        roundPauses: const [Duration.zero],
-        session: const {'x-user-token': 'id-token'});
+      proxy: Proxy(f.url, 'wrong'),
+      freeUrl: '${f.url}/direct',
+      roundPauses: const [Duration.zero],
+      session: const {'x-user-token': 'id-token'},
+    );
     final (text, _) = await run(ai, conv());
     expect(text, 'ok from direct');
     expect(f.userTokens['direct'], isNull);
@@ -247,46 +265,68 @@ void main() {
   });
 
   test('every Gemini model busy: Groq answers, images only to models that see them', () async {
-    final f = FakeAi({
-      'g:gemini-flash-latest': [503],
-      'g:gemini-pro-latest': [429],
-    }, config: [
-      ...gem,
-      {'backend': 'openai', 'model': 'text-only', 'p': 'q'},
-      {'backend': 'openai', 'model': 'scout', 'p': 'q', 'vision': true},
-    ]);
+    final f = FakeAi(
+      {
+        'g:gemini-flash-latest': [503],
+        'g:gemini-pro-latest': [429],
+      },
+      config: [
+        ...gem,
+        {'backend': 'openai', 'model': 'text-only', 'p': 'q'},
+        {'backend': 'openai', 'model': 'scout', 'p': 'q', 'vision': true},
+      ],
+    );
     await f.start();
     final img = await tempFile('a.png', [0x89, 0x50, 0x4E, 0x47]);
     final (text, _) = await run(
-        f.client(), conv(files: [Attachment(id: 'a', name: 'a.png', ext: 'png', size: 4, path: img.path)]));
+      f.client(),
+      conv(
+        files: [Attachment(id: 'a', name: 'a.png', ext: 'png', size: 4, path: img.path)],
+      ),
+    );
     expect(text, 'ok from q:scout');
     expect(f.calls, isNot(contains('q:text-only')));
     final content = (f.bodies['q:scout']!['messages'] as List)[1]['content'] as List;
-    expect(content.any((p) => p['type'] == 'image_url' && (p['image_url']['url'] as String).startsWith('data:image/png;base64,')),
-        isTrue);
+    expect(
+      content.any(
+        (p) => p['type'] == 'image_url' && (p['image_url']['url'] as String).startsWith('data:image/png;base64,'),
+      ),
+      isTrue,
+    );
     await f.stop();
   });
 
   test('Mistral gets the image data URL as a plain string', () async {
-    final f = FakeAi({}, config: [
-      {'backend': 'openai', 'model': 'mistral-small-latest', 'p': 'm', 'vision': true},
-    ]);
+    final f = FakeAi(
+      {},
+      config: [
+        {'backend': 'openai', 'model': 'mistral-small-latest', 'p': 'm', 'vision': true},
+      ],
+    );
     await f.start();
     final img = await tempFile('a.png', [0x89, 0x50, 0x4E, 0x47]);
-    await run(f.client(), conv(files: [Attachment(id: 'a', name: 'a.png', ext: 'png', size: 4, path: img.path)]));
+    await run(
+      f.client(),
+      conv(
+        files: [Attachment(id: 'a', name: 'a.png', ext: 'png', size: 4, path: img.path)],
+      ),
+    );
     final content = (f.bodies['m:mistral-small-latest']!['messages'] as List)[1]['content'] as List;
     expect(content.any((p) => p['type'] == 'image_url' && p['image_url'] is String), isTrue);
     await f.stop();
   });
 
   test('a service the proxy has no key for is skipped entirely', () async {
-    final f = FakeAi({
-      'q:a': ['unconfigured'],
-    }, config: [
-      {'backend': 'openai', 'model': 'a', 'p': 'q'},
-      {'backend': 'openai', 'model': 'b', 'p': 'q'},
-      {'backend': 'openai', 'model': 'c', 'p': 'o'},
-    ]);
+    final f = FakeAi(
+      {
+        'q:a': ['unconfigured'],
+      },
+      config: [
+        {'backend': 'openai', 'model': 'a', 'p': 'q'},
+        {'backend': 'openai', 'model': 'b', 'p': 'q'},
+        {'backend': 'openai', 'model': 'c', 'p': 'o'},
+      ],
+    );
     await f.start();
     final (text, _) = await run(f.client(), conv());
     expect(text, 'ok from o:c');
@@ -297,9 +337,15 @@ void main() {
   test('a proxy that refuses the app falls back to the direct free server', () async {
     final f = FakeAi({}, config: gem);
     await f.start();
-    final ai = AiClient(
-        proxy: Proxy(f.url, 'wrong'), freeUrl: '${f.url}/direct', roundPauses: const [Duration.zero]);
-    final pdf = Attachment(id: 'p', name: 'r.pdf', ext: 'pdf', size: 1, path: '/none', extractedText: '[Page 1]\nTotal 1250');
+    final ai = AiClient(proxy: Proxy(f.url, 'wrong'), freeUrl: '${f.url}/direct', roundPauses: const [Duration.zero]);
+    final pdf = Attachment(
+      id: 'p',
+      name: 'r.pdf',
+      ext: 'pdf',
+      size: 1,
+      path: '/none',
+      extractedText: '[Page 1]\nTotal 1250',
+    );
     final (text, _) = await run(ai, conv(files: [pdf]));
     expect(text, 'ok from direct');
     expect(jsonEncode(f.bodies['direct']), contains('Total 1250'));
@@ -324,6 +370,31 @@ void main() {
     final (text, _) = await run(f.client(), conv());
     expect(text, 'ok from g:gemini-pro-latest');
     expect(sw.elapsed, lessThan(const Duration(seconds: 2)));
+    await f.stop();
+  });
+
+  test('a slow first server gets a running mate; the first to answer wins', () async {
+    final f = FakeAi({
+      'g:gemini-flash-latest': ['hang'],
+    }, config: gem);
+    await f.start();
+    final sw = Stopwatch()..start();
+    final (text, events) = await run(
+        f.client(hedge: const Duration(milliseconds: 100), headerTimeout: const Duration(seconds: 10)), conv());
+    expect(text, 'ok from g:gemini-pro-latest');
+    expect(sw.elapsed, lessThan(const Duration(seconds: 3)), reason: 'long before the 10 s give-up');
+    expect(events, ['text'], reason: 'no reset, nothing from the slow one');
+    await f.stop();
+  });
+
+  test('a first server that fails before the hedge is handled as usual', () async {
+    final f = FakeAi({
+      'g:gemini-flash-latest': [503],
+    }, config: gem);
+    await f.start();
+    final (text, _) = await run(f.client(hedge: const Duration(seconds: 3)), conv());
+    expect(text, 'ok from g:gemini-pro-latest');
+    expect(f.calls, ['config', 'g:gemini-flash-latest', 'g:gemini-pro-latest']);
     await f.stop();
   });
 
@@ -359,7 +430,10 @@ void main() {
       'direct': ['drop', 'drop', 'drop'],
     }, config: gem);
     await f.start();
-    await expectLater(run(f.client(), conv()), throwsA(isA<AiException>().having((e) => e.message, 'code', isIn(['busy', 'network']))));
+    await expectLater(
+      run(f.client(), conv()),
+      throwsA(isA<AiException>().having((e) => e.message, 'code', isIn(['busy', 'network']))),
+    );
     expect(f.calls.where((c) => c != 'config'), hasLength(9));
     await f.stop();
   });
@@ -377,17 +451,24 @@ void main() {
   });
 
   test('a scanned PDF stays with Gemini instead of a model that cannot read it', () async {
-    final f = FakeAi({
-      'g:gemini-flash-latest': [503, 503],
-      'g:gemini-pro-latest': [503],
-    }, config: [
-      ...gem,
-      {'backend': 'openai', 'model': 'x', 'p': 'q', 'vision': true},
-    ]);
+    final f = FakeAi(
+      {
+        'g:gemini-flash-latest': [503, 503],
+        'g:gemini-pro-latest': [503],
+      },
+      config: [
+        ...gem,
+        {'backend': 'openai', 'model': 'x', 'p': 'q', 'vision': true},
+      ],
+    );
     await f.start();
     final pdf = await tempFile('s.pdf', utf8.encode('%PDF-1.4'));
-    final (text, _) =
-        await run(f.client(), conv(files: [Attachment(id: 's', name: 's.pdf', ext: 'pdf', size: 8, path: pdf.path)]));
+    final (text, _) = await run(
+      f.client(),
+      conv(
+        files: [Attachment(id: 's', name: 's.pdf', ext: 'pdf', size: 8, path: pdf.path)],
+      ),
+    );
     expect(text, 'ok from g:gemini-pro-latest');
     expect(f.calls.where((c) => !c.startsWith('g:') && c != 'config'), isEmpty);
     await f.stop();
@@ -397,7 +478,14 @@ void main() {
     final f = FakeAi({}, config: gem);
     await f.start();
     final big = await tempFile('big.pdf', List.filled(5 * 1024 * 1024, 32));
-    final a = Attachment(id: 'b', name: 'big.pdf', ext: 'pdf', size: 5 * 1024 * 1024, path: big.path, extractedText: 'x');
+    final a = Attachment(
+      id: 'b',
+      name: 'big.pdf',
+      ext: 'pdf',
+      size: 5 * 1024 * 1024,
+      path: big.path,
+      extractedText: 'x',
+    );
     final ai = f.client();
     final (text, _) = await run(ai, conv(files: [a]));
     expect(text, 'ok from g:gemini-flash-latest');
@@ -423,11 +511,22 @@ void main() {
       text.writeln(i == 210 ? 'Warranty period is 24 months.' : 'Chapter $i on soil, water and seasonal crops. ' * 10);
     }
     final a = Attachment(
-        id: 'k', name: 'book.pdf', ext: 'pdf', size: 6 * 1024 * 1024, path: big.path,
-        extractedText: text.toString(), pages: 300, textPages: 300);
-    final c = Conversation(id: 'c', title: 't', messages: [
-      Message(id: 'm', role: Role.user, text: 'How long is the warranty period?', attachments: [a]),
-    ]);
+      id: 'k',
+      name: 'book.pdf',
+      ext: 'pdf',
+      size: 6 * 1024 * 1024,
+      path: big.path,
+      extractedText: text.toString(),
+      pages: 300,
+      textPages: 300,
+    );
+    final c = Conversation(
+      id: 'c',
+      title: 't',
+      messages: [
+        Message(id: 'm', role: Role.user, text: 'How long is the warranty period?', attachments: [a]),
+      ],
+    );
     final (answer, _) = await run(f.client(), c);
     expect(answer, 'ok from g:gemini-flash-latest');
     expect(f.calls, ['config', 'g:gemini-flash-latest']);
@@ -437,16 +536,19 @@ void main() {
     await f.stop();
   });
 
-  test('Flash answers first for speed, Pro right behind it on the paid plan; the direct free server is always last', () async {
-    final f = FakeAi({}, config: gem);
-    await f.start();
-    final chain = await f.client(preferPro: true).chain();
-    expect(chain.first.model, 'gemini-flash-latest');
-    expect(chain[1].model, 'gemini-pro-latest');
-    expect(chain.where((a) => a.model == 'gemini-pro-latest'), hasLength(1));
-    expect(chain.last.direct, isTrue);
-    await f.stop();
-  });
+  test(
+    'Flash answers first for speed, Pro right behind it on the paid plan; the direct free server is always last',
+    () async {
+      final f = FakeAi({}, config: gem);
+      await f.start();
+      final chain = await f.client(preferPro: true).chain();
+      expect(chain.first.model, 'gemini-flash-latest');
+      expect(chain[1].model, 'gemini-pro-latest');
+      expect(chain.where((a) => a.model == 'gemini-pro-latest'), hasLength(1));
+      expect(chain.last.direct, isTrue);
+      await f.stop();
+    },
+  );
 
   test('Flash is asked to think only briefly, so the answer starts quickly', () async {
     final f = FakeAi({}, config: gem);
@@ -475,15 +577,18 @@ void main() {
     final f = FakeAi({}, config: gem);
     await f.start();
     String book(String word) => [
-          for (var i = 1; i <= 200; i++) '\n[الصفحة $i / Page $i]\n${i == 50 ? word : 'Filler text about other topics. ' * 12}',
-        ].join();
+      for (var i = 1; i <= 200; i++)
+        '\n[الصفحة $i / Page $i]\n${i == 50 ? word : 'Filler text about other topics. ' * 12}',
+    ].join();
     final files = [
       for (final (n, w) in [('a.docx', 'Alpha fact'), ('b.docx', 'Beta fact'), ('c.docx', 'Gamma fact')])
         Attachment(id: n, name: n, ext: 'docx', size: 10, path: '/none/$n', extractedText: book(w)),
     ];
-    final c = Conversation(id: 'c', title: 't', messages: [
-      Message(id: 'm', role: Role.user, text: 'Which fact is in each file?', attachments: files),
-    ]);
+    final c = Conversation(
+      id: 'c',
+      title: 't',
+      messages: [Message(id: 'm', role: Role.user, text: 'Which fact is in each file?', attachments: files)],
+    );
     expect(AiClient.textBudget(c), lessThan(AiClient.retrievalBudget));
     await run(f.client(), c);
     final sent = jsonEncode(f.bodies['g:gemini-flash-latest']);
