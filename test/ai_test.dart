@@ -43,6 +43,7 @@ class FakeAi {
 
   Future<void> start() async {
     AiClient.resetConfig();
+    AiClient.resetSlow();
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
     server.listen((req) async {
       final path = req.uri.path;
@@ -384,6 +385,9 @@ void main() {
     expect(text, 'ok from g:gemini-pro-latest');
     expect(sw.elapsed, lessThan(const Duration(seconds: 3)), reason: 'long before the 10 s give-up');
     expect(events, ['text'], reason: 'no reset, nothing from the slow one');
+    // The next question starts with the one that answered.
+    expect((await f.client().chain()).first.model, 'gemini-pro-latest');
+    AiClient.resetSlow();
     await f.stop();
   });
 

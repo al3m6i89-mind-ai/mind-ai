@@ -257,11 +257,23 @@ class AiClient {
     return defaultChain;
   }
 
+  /// Models that recently hung until their running mate answered; they go
+  /// behind the others for a while, so the next question does not wait 5 s.
+  static final Map<String, DateTime> _slow = {};
+  static const slowFor = Duration(minutes: 15);
+  static bool _isSlow(String model) {
+    final t = _slow[model];
+    return t != null && DateTime.now().difference(t) < slowFor;
+  }
+
+  @visibleForTesting
+  static void resetSlow() => _slow.clear();
+
   /// The full order for this reply.
   Future<List<Attempt>> chain() async {
     final base = proxy.enabled ? await _proxyChain() : const <Attempt>[];
     final gemini = base.where((a) => a.backend == Backend.gemini).map((a) => a.model).toList();
-    return [
+    final ordered = [
       if (gemini.isNotEmpty)
         for (final m in {
           // Flash answers first for everyone, with Flash-Lite racing it when it
@@ -272,6 +284,10 @@ class AiClient {
         })
           Attempt(Backend.gemini, m, 'g'),
       ...base.where((a) => a.backend != Backend.gemini),
+    ];
+    return [
+      ...ordered.where((a) => !_isSlow(a.model)),
+      ...ordered.where((a) => _isSlow(a.model)),
       directFree,
     ];
   }
@@ -380,6 +396,7 @@ class AiClient {
         (text) {
           if (winner == null) {
             winner = sub;
+            if (x == b) _slow[a.model] = DateTime.now();
             hedge?.cancel();
             for (final o in subs) {
               if (o != sub) _drop(o);
