@@ -1,7 +1,7 @@
 {
-  "version": "1.9.2",
-  "build": 40,
+  "version": "1.10.0",
+  "build": 41,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• الإجابة من الكتب: الجواب النهائي أولًا ثم الشرح بنص الكتاب\n• «احفظ الملف» يجهّز الملف بدون إجابة عشوائية\n• دائرة تعرض نسبة تحميل الملف من 0 إلى 100%\n• إجابات أسرع وأدق في الملفات الكبيرة، واسأل عن صفحة برقمها",
-  "notes_en": "• Answers from books: the final answer first, then the book's own explanation\n• \"Save the file\" just gets it ready\n• A ring shows file loading from 0 to 100%\n• Faster, more accurate answers in big files; ask about a page by number"
+  "notes_ar": "• ردود أسرع بكثير: يبدأ الجواب خلال ثوانٍ\n• الملفات الكبيرة والصور تُجهَّز فور إضافتها\n• يدقق في كل الملفات والصور المرفقة ويذكر مصدر كل معلومة\n• التطبيق أخف وأسرع في الفتح",
+  "notes_en": "• Much faster replies: answers start within seconds\n• Big files and images get ready as soon as you add them\n• Checks every attached file and image and names the source of each fact\n• Lighter app that opens faster"
 }
