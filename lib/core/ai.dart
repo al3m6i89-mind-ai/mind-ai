@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:http/http.dart' as http;
 
 import 'models.dart';
@@ -62,13 +64,28 @@ When files or images are attached to the conversation, every answer about them m
 - Read the whole file before answering: every page, slide, sheet, table, header, footnote and every part of an image. When the question asks for all items, totals or a list, include every one that appears.
 - Copy numbers, amounts, dates, names, codes and quotes exactly as written, with the same digits, currency and units. Never round, convert or "correct" them. If you calculate something, show the values you used in one line.
 - Never add facts, figures or assumptions that are not in the files, and never fill gaps from general knowledge. If something is partly there, give the part that is there and say what is missing.
-- If text is blurry, cut off or hard to read, say which part is unclear instead of guessing it.
+- Handwriting (on paper photos, scanned pages, worksheets, notes in margins, filled-in answers) is part of the file: read it as carefully as print. Work out each handwritten word from its letters and its context (the subject, the printed question next to it, the words around it) and write it in correct spelling, as the writer meant it, never letter by letter with mistakes. Copy handwritten numbers, names and answers exactly. Tell printed text and handwriting apart when it matters (for example the printed question and the student's handwritten answer).
+- If text or handwriting is blurry, cut off or truly unreadable, give your best reading of what you can and say which word or part is unclear, instead of inventing it.
 - If the answer is not in the files, reply exactly: "لم أجد هذه المعلومة في الملفات التي رفعتها، لذلك لا أستطيع تأكيد الإجابة." (in English: "I couldn't find this information in the files you uploaded, so I can't confirm an answer.") Do not follow it with a guess.
 - If the files contradict each other, show both values and where each appears.
 - End every answer that uses a file with a line "المصدر:" (or "Source:") naming the file and, only when certain, the page (PDF), slide (PowerPoint), sheet and cell (Excel) or section heading (Word). Never invent a page or cell.
 When the user's message is not a question but an instruction about the file itself, such as "احفظ الملف", "خذ هذا الملف", "اقرأ الملف" or "save this file", do not answer anything from the file. Reply in one line that the file is saved and ready, and that they can ask any question about it (for example: "تم حفظ الملف وهو جاهز، اسألني أي سؤال عنه."). If the instruction asks for something specific (a summary, a translation, a list), do that instead.
 When nothing is attached, answer briefly and accurately as a helpful assistant, and say so if you are unsure.
 ''';
+
+/// Pictures (JPEG) of 1-based [pages] of the PDF at [path].
+typedef PageImages = Future<List<Uint8List>> Function(String path, List<int> pages);
+
+/// Renders PDF pages on the phone with Android's own PDF renderer.
+Future<List<Uint8List>> renderPdfPages(String path, List<int> pages) async {
+  try {
+    final r = await const MethodChannel('file_chat/pdf')
+        .invokeListMethod<Uint8List>('render', {'path': path, 'pages': pages, 'width': 1600});
+    return r ?? const [];
+  } catch (_) {
+    return const []; // tests and platforms without the renderer
+  }
+}
 
 /// How a server is spoken to: Gemini's own API, or the OpenAI chat format
 /// that Groq, Mistral, OpenRouter, Cerebras and Pollinations share.
@@ -154,6 +171,7 @@ class AiClient {
     ],
     this.filePollInterval = const Duration(seconds: 2),
     this.hedgeAfter = const Duration(seconds: 5),
+    this.pageImages = renderPdfPages,
     this.headerTimeout = const Duration(seconds: 20),
     this.idleTimeout = const Duration(seconds: 45),
     this.system = _system,
@@ -190,6 +208,12 @@ class AiClient {
   /// is asked at the same time and the first to answer wins. Google's Flash
   /// sometimes hangs for minutes; the user should never wait for that.
   final Duration hedgeAfter;
+
+  /// Pictures of PDF pages (see [renderPdfPages]); empty when not available.
+  final PageImages pageImages;
+
+  /// How many page pictures go with a PDF sent as text.
+  static const maxPageImages = 4;
 
   /// Google's alias for its current Flash model, so the app keeps working when
   /// older versions are retired.
@@ -458,10 +482,11 @@ class AiClient {
           ..headers.addAll({'Content-Type': 'application/json', ..._headers(a, slot)})
           ..body = jsonEncode({
             'contents': contents,
-            if (_thinkingBudget(a.model) case final b?)
-              'generationConfig': {
-                'thinkingConfig': {'thinkingBudget': b},
-              },
+            'generationConfig': {
+              if (_thinkingBudget(a.model) case final b?) 'thinkingConfig': {'thinkingBudget': b},
+              // Fine print and handwriting need the pictures at full detail.
+              if (_highDetail && _hasMedia(contents)) 'mediaResolution': 'MEDIA_RESOLUTION_HIGH',
+            },
             'systemInstruction': {
               'parts': [
                 {'text': system},
@@ -550,6 +575,9 @@ class AiClient {
   /// check numbers, without the long silence of unlimited thinking. Pro cannot
   /// turn thinking down this far and Flash-Lite does not think by default.
   static bool _thinkingAllowed = true;
+  static bool _highDetail = true;
+  static bool _hasMedia(List<Map<String, dynamic>> contents) => contents.any((c) => (c['parts'] as List)
+      .any((p) => p is Map && (p.containsKey('inline_data') || p.containsKey('file_data'))));
   static int? _thinkingBudget(String model) =>
       _thinkingAllowed && model.contains('flash') && !model.contains('lite') ? 512 : null;
 
@@ -559,6 +587,10 @@ class AiClient {
       msg = (jsonDecode(body)['error']?['message'] as String?) ?? body;
     } catch (_) {}
     final detail = 'HTTP $code ${_short(msg)}';
+    if (code == 400 && a.backend == Backend.gemini && msg.toLowerCase().contains('resolution') && _highDetail) {
+      _highDetail = false;
+      return _Fail('busy', retryable: true, detail: detail);
+    }
     if (code == 400 && a.backend == Backend.gemini && msg.toLowerCase().contains('thinking') && _thinkingAllowed) {
       // A model that refuses the setting is asked again without it.
       _thinkingAllowed = false;
@@ -629,6 +661,17 @@ class AiClient {
         final bytes = sendsText(a) ? null : await _bytes(a);
         if (bytes == null) {
           parts.add({'text': await _asText(a, conv)});
+          // The pages that matter, as pictures: handwriting, stamps and drawings are not in the text.
+          if (a.isPdf) {
+            for (final (n, jpg) in await _pagePictures(a, conv)) {
+              if (inlineBytes + jpg.length > maxInlineBytes) break;
+              inlineBytes += jpg.length;
+              parts.add({'text': '[صورة الصفحة $n من ${a.name}، فيها الكتابة اليدوية والرسوم كما هي]'});
+              parts.add({
+                'inline_data': {'mime_type': 'image/jpeg', 'data': base64Encode(jpg)},
+              });
+            }
+          }
         } else if (bytes.length <= maxInlineFile && inlineBytes + bytes.length <= maxInlineBytes) {
           inlineBytes += bytes.length;
           parts.add({'text': '[${a.isImage ? 'صورة مرفقة' : 'ملف مرفق'}${_no(a, conv)}: ${a.name}]'});
@@ -810,6 +853,29 @@ class AiClient {
   /// Each file's text for this reply, worked out once and reused by every
   /// server in the chain.
   final Map<String, String> _texts = {};
+  final Map<String, Retrieved> _found = {};
+  final Map<String, Future<List<(int, Uint8List)>>> _pictures = {};
+
+  /// Pictures of the pages that best answer the question: pages the user
+  /// named, else the best text matches, else (no text at all, a scan) the
+  /// first pages.
+  Future<List<(int, Uint8List)>> _pagePictures(Attachment a, Conversation conv) {
+    final key = '${a.id}:${conv.messages.length}';
+    return _pictures[key] ??= () async {
+      final asks = [for (final m in conv.messages) if (m.role == Role.user && m.text.trim().isNotEmpty) m.text];
+      var pages = _found[key]?.best ?? const <int>[];
+      if (pages.isEmpty) pages = askedPages(asks.isEmpty ? '' : asks.last).toList();
+      if (pages.isEmpty && (a.extractedText ?? '').trim().isEmpty) pages = [for (var i = 1; i <= (a.pages ?? 4); i++) i];
+      pages = pages.take(maxPageImages).toList();
+      if (pages.isEmpty) return const <(int, Uint8List)>[];
+      try {
+        final images = await pageImages(a.path, pages);
+        return [for (var i = 0; i < images.length && i < pages.length; i++) (pages[i], images[i])];
+      } catch (e) {
+        return const <(int, Uint8List)>[];
+      }
+    }();
+  }
 
   /// Characters of text each file may send: big books share one budget, so
   /// five of them answer as fast as one.
@@ -839,11 +905,16 @@ class AiClient {
       final r = text.length <= budget
           ? relevant(text, q, context: ctx, budget: budget)
           : await Isolate.run(() => relevant(text, q, context: ctx, budget: budget));
+      _found[key] = r;
       if (r.whole) return _texts[key] = '[ملف مرفق$no: ${a.name} (${a.typeLabel})]\n$text\n[نهاية الملف: ${a.name}]';
       return _texts[key] = '[ملف مرفق$no: ${a.name} (${a.typeLabel}) — ملف كبير، هذه ${r.shown} من أصل ${r.total} '
           '${a.isPdf ? 'صفحة' : 'جزء'} هي الأكثر صلة بالسؤال الأخير. أجب منها واذكر رقم الصفحة. '
           'إذا لم تجد الإجابة فيها فقل ذلك، واقترح على المستخدم كلمات أدق أو رقم الصفحة.]\n'
           '${r.text}\n[نهاية المقتطفات من: ${a.name}]';
+    }
+    if (a.isPdf) {
+      return '[ملف مرفق$no: ${a.name} — ليس فيه نص مكتوب (ممسوح ضوئياً). إذا أُرفقت صور صفحاته بعد هذا فاقرأ منها، '
+          'وإلا فلا تخمّن محتواه، وأخبر المستخدم بذلك واقترح أن يذكر رقم الصفحة.]';
     }
     return '[ملف مرفق: ${a.name} — لا يمكن قراءة محتواه على هذا الخادم (قد يكون ممسوحاً ضوئياً أو محذوفاً). لا تخمّن محتواه، وأخبر المستخدم بذلك.]';
   }

@@ -19,8 +19,13 @@ class Passage {
 }
 
 class Retrieved {
-  Retrieved(this.text, this.shown, this.total, {required this.whole});
+  Retrieved(this.text, this.shown, this.total, {required this.whole, this.best = const []});
   final String text;
+
+  /// PDF page numbers that matter most for the question, best first (pages
+  /// the user named, then the best matches). Their images are sent too, so
+  /// handwriting and drawings on them are read.
+  final List<int> best;
   final int shown;
   final int total;
 
@@ -118,11 +123,9 @@ List<Passage> passages(String text, {int size = 3000}) {
 /// [context] is the previous question, for follow-ups such as "explain more".
 Retrieved relevant(String text, String question, {String context = '', int budget = 48000}) {
   final all = passages(text);
-  if (text.length <= budget) return Retrieved(text, all.length, all.length, whole: true);
+  final whole = text.length <= budget;
 
-  final asked = {
-    for (final m in _askedPage.allMatches(Conversation.fold(_digits('$question $context')))) int.parse(m[1]!),
-  };
+  final asked = askedPages('$question $context');
   final query = <String, double>{};
   for (final w in _queryWords(context)) {
     query[w] = 0.5;
@@ -182,10 +185,16 @@ Retrieved relevant(String text, String question, {String context = '', int budge
     return true;
   }
 
+  final ranked = [for (var i = 0; i < n; i++) if (scores[i] > 0) i]..sort((a, b) => scores[b].compareTo(scores[a]));
+  final best = <int>{
+    for (final p in all) if (p.page != null && asked.contains(p.page)) p.page!,
+    for (final i in ranked) ?all[i].page,
+  }.toList();
+  if (whole) return Retrieved(text, n, n, whole: true, best: best);
+
   for (var i = 0; i < n; i++) {
     if (all[i].page != null && asked.contains(all[i].page)) take(i);
   }
-  final ranked = [for (var i = 0; i < n; i++) if (scores[i] > 0) i]..sort((a, b) => scores[b].compareTo(scores[a]));
   if (ranked.isEmpty && chosen.isEmpty) {
     // Nothing matched (a summary question): an even spread across the document.
     final per = math.max(1, (used + text.length) ~/ math.max(1, budget));
@@ -212,5 +221,10 @@ Retrieved relevant(String text, String question, {String context = '', int budge
     out.writeln(all[i].text);
     last = i;
   }
-  return Retrieved(out.toString(), order.length, n, whole: false);
+  return Retrieved(out.toString(), order.length, n, whole: false, best: best);
 }
+
+/// Page numbers the user names ("صفحة ١٢", "page 12").
+Set<int> askedPages(String text) => {
+      for (final m in _askedPage.allMatches(Conversation.fold(_digits(text)))) int.parse(m[1]!),
+    };

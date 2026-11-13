@@ -8,6 +8,12 @@ import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.provider.Settings
+import android.graphics.Bitmap
+import android.graphics.Color
+import android.graphics.pdf.PdfRenderer
+import android.os.ParcelFileDescriptor
+import java.io.ByteArrayOutputStream
+import java.io.File
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -25,6 +31,17 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         updatesChannel(flutterEngine)
+        // PDF pages as pictures, so handwriting and drawings on them can be read.
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "file_chat/pdf").setMethodCallHandler { call, result ->
+            if (call.method != "render") return@setMethodCallHandler result.notImplemented()
+            val path = call.argument<String>("path") ?: return@setMethodCallHandler result.success(emptyList<ByteArray>())
+            val pages = call.argument<List<Int>>("pages") ?: emptyList()
+            val width = call.argument<Int>("width") ?: 1600
+            Thread {
+                val images = safe { renderPages(path, pages, width) } ?: emptyList()
+                runOnUiThread { result.success(images) }
+            }.start()
+        }
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "file_chat/adblock").setMethodCallHandler { call, result ->
             if (call.method == "deviceId") {
                 return@setMethodCallHandler result.success(safe { Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) })
@@ -97,6 +114,38 @@ class MainActivity : FlutterActivity() {
                 }
                 else -> result.notImplemented()
             }
+        }
+    }
+
+    /** JPEGs of the given 1-based [pages], [width] pixels wide (pages missing from the file are skipped). */
+    private fun renderPages(path: String, pages: List<Int>, width: Int): List<ByteArray> {
+        val fd = ParcelFileDescriptor.open(File(path), ParcelFileDescriptor.MODE_READ_ONLY)
+        val renderer = PdfRenderer(fd)
+        try {
+            val out = mutableListOf<ByteArray>()
+            for (n in pages) {
+                if (n < 1 || n > renderer.pageCount) continue
+                val page = renderer.openPage(n - 1)
+                try {
+                    // Fits within width x 2*width, keeping the page's shape.
+                    val scale = minOf(width.toFloat() / page.width, width * 2f / page.height)
+                    val w = (page.width * scale).toInt().coerceAtLeast(1)
+                    val h = (page.height * scale).toInt().coerceAtLeast(1)
+                    val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+                    bmp.eraseColor(Color.WHITE)
+                    page.render(bmp, null, null, PdfRenderer.Page.RENDER_MODE_FOR_DISPLAY)
+                    val bytes = ByteArrayOutputStream()
+                    bmp.compress(Bitmap.CompressFormat.JPEG, 85, bytes)
+                    bmp.recycle()
+                    out.add(bytes.toByteArray())
+                } finally {
+                    page.close()
+                }
+            }
+            return out
+        } finally {
+            renderer.close()
+            fd.close()
         }
     }
 

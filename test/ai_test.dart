@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:file_chat/core/ai.dart';
 import 'package:file_chat/core/models.dart';
@@ -29,6 +30,7 @@ class FakeAi {
     void Function(String)? onModel,
     Duration hedge = const Duration(seconds: 5),
     Duration headerTimeout = const Duration(milliseconds: 500),
+    PageImages? pages,
   }) => AiClient(
     proxy: Proxy(url, 'tok'),
     freeUrl: '$url/direct',
@@ -39,6 +41,7 @@ class FakeAi {
     filePollInterval: Duration.zero,
     hedgeAfter: hedge,
     headerTimeout: headerTimeout,
+    pageImages: pages ?? renderPdfPages,
   );
 
   Future<void> start() async {
@@ -604,6 +607,67 @@ void main() {
     }
     expect(sent.length, lessThan(3 * AiClient.retrievalBudget));
     await f.stop();
+  });
+
+  group('handwriting', () {
+    test('a big text PDF also sends pictures of the pages that answer, at full detail', () async {
+      final f = FakeAi({}, config: gem);
+      await f.start();
+      final file = await tempFile('worksheet.pdf', List.filled(6 * 1024 * 1024, 32));
+      final text = [
+        for (var i = 1; i <= 120; i++)
+          '\n[الصفحة $i / Page $i]\n${i == 77 ? 'Exercise: write the capital of Oman.' : 'Other exercises about rivers and mountains. ' * 10}',
+      ].join();
+      final a = Attachment(
+          id: 'w', name: 'worksheet.pdf', ext: 'pdf', size: 6 * 1024 * 1024, path: file.path,
+          extractedText: text, pages: 120, textPages: 120);
+      final asked = <List<int>>[];
+      final c = Conversation(id: 'c', title: 't', messages: [
+        Message(id: 'm', role: Role.user, text: 'What did the student write for the capital of Oman?', attachments: [a]),
+      ]);
+      await run(f.client(pages: (path, pages) async {
+        asked.add(pages);
+        return [for (final _ in pages) Uint8List.fromList([0xFF, 0xD8, 0xFF, 1, 2, 3])];
+      }), c);
+      expect(asked.single.first, 77, reason: 'the best matching page first');
+      expect(asked.single.length, lessThanOrEqualTo(AiClient.maxPageImages));
+      final body = f.bodies['g:gemini-flash-latest']!;
+      final sent = jsonEncode(body);
+      expect(sent, contains('image/jpeg'));
+      expect(sent, contains('صورة الصفحة 77 من worksheet.pdf'));
+      expect(body['generationConfig']['mediaResolution'], 'MEDIA_RESOLUTION_HIGH');
+      expect(sent, contains('Handwriting'), reason: 'the instructions cover handwriting');
+      await f.stop();
+    });
+
+    test('a huge scanned PDF without text sends pictures of the pages asked for', () async {
+      final f = FakeAi({}, config: gem);
+      await f.start();
+      final file = await tempFile('scan.pdf', utf8.encode('%PDF-1.4'));
+      final a = Attachment(id: 's', name: 'scan.pdf', ext: 'pdf', size: 80 * 1024 * 1024, path: file.path, pages: 300, textPages: 0);
+      List<int>? asked;
+      final c = Conversation(id: 'c', title: 't', messages: [
+        Message(id: 'm', role: Role.user, text: 'ما المكتوب بخط اليد في صفحة ٤٥؟', attachments: [a]),
+      ]);
+      await run(f.client(pages: (path, pages) async {
+        asked = pages;
+        return [Uint8List.fromList([0xFF, 0xD8, 0xFF])];
+      }), c);
+      expect(asked, [45]);
+      expect(jsonEncode(f.bodies['g:gemini-flash-latest']), contains('صورة الصفحة 45'));
+      await f.stop();
+    });
+
+    test('without page pictures nothing breaks', () async {
+      final f = FakeAi({}, config: gem);
+      await f.start();
+      final file = await tempFile('n.pdf', List.filled(6 * 1024 * 1024, 32));
+      final a = Attachment(id: 'n', name: 'n.pdf', ext: 'pdf', size: 6 * 1024 * 1024, path: file.path,
+          extractedText: 'x ' * 30000, pages: 2, textPages: 2);
+      final (text, _) = await run(f.client(), conv(files: [a]));
+      expect(text, 'ok from g:gemini-flash-latest');
+      await f.stop();
+    });
   });
 
   test('without a proxy only the direct free server is used', () async {
