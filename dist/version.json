@@ -1,7 +1,7 @@
 {
-  "version": "1.11.0",
-  "build": 46,
+  "version": "1.12.1",
+  "build": 48,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• يقرأ الكتابة اليدوية في الصور وملفات PDF بدقة وبإملاء صحيح\n• يرسل صور الصفحات المهمة مع النص، فيقرأ الأختام والرسوم والملاحظات\n• ملفات PDF الممسوحة: اسأل عن صفحة برقمها ويقرأها\n• الصور تُقرأ بأعلى دقة",
-  "notes_en": "• Reads handwriting in photos and PDFs accurately, with correct spelling\n• Sends pictures of the key pages with the text, so stamps, drawings and notes are read\n• Scanned PDFs: ask about a page by number and it reads it\n• Pictures are read at full detail"
+  "notes_ar": "• ملفات PDF المكتوبة بخط اليد (مثل CamScanner) تُقرأ صفحة صفحة عند إضافتها، فيجد الجواب بدقة\n• اشتراك شهري 19.99$ وسنوي 179.99$ (توفير 25٪)\n• عرض الاشتراك في وسط الشاشة لغير المشتركين\n• بدون إعلانات للمشتركين",
+  "notes_en": "• Handwritten PDFs (e.g. CamScanner) are read page by page when added, so answers are found accurately\n• Monthly $19.99 and yearly $179.99 (save 25%)\n• Subscription offer for the free plan\n• No ads for subscribers"
 }
