@@ -164,6 +164,20 @@ class FakeAi {
             'error': {'message': step == 404 ? 'gone, use models/gemini-9-flash' : 'nope'},
           }),
         );
+      } else if (req.uri.path.endsWith(':generateContent')) {
+        // Page transcription: one JSON answer echoing each page mark.
+        final marks = RegExp(r'\[الصفحة (\d+) / Page \d+\]').allMatches(raw).map((m) => m[1]).toList();
+        req.response.write(jsonEncode({
+          'candidates': [
+            {
+              'content': {
+                'parts': [
+                  {'text': [for (final n in marks) '[الصفحة $n / Page $n]\nنص مكتوب باليد في الصفحة $n'].join('\n')},
+                ],
+              },
+            },
+          ],
+        }));
       } else {
         req.response.headers.contentType = ContentType('text', 'event-stream');
         if (step == 'midfail') {
@@ -668,6 +682,31 @@ void main() {
       expect(text, 'ok from g:gemini-flash-latest');
       await f.stop();
     });
+  });
+
+  test('scanned pages are written out page by page, at full detail', () async {
+    final f = FakeAi({}, config: gem);
+    await f.start();
+    final out = await f.client().transcribePages([
+      (7, Uint8List.fromList([0xFF, 0xD8, 0xFF])),
+      (8, Uint8List.fromList([0xFF, 0xD8, 0xFF])),
+    ]);
+    expect(out, contains('[الصفحة 7 / Page 7]'));
+    expect(out, contains('نص مكتوب باليد في الصفحة 8'));
+    final body = f.bodies['g:gemini-flash-latest']!;
+    expect(body['generationConfig']['mediaResolution'], 'MEDIA_RESOLUTION_HIGH');
+    expect(body['generationConfig']['temperature'], 0);
+    expect(jsonEncode(body), contains('Handwriting'));
+    await f.stop();
+  });
+
+  test('transcription falls back to Flash-Lite when Flash fails', () async {
+    final f = FakeAi({'g:gemini-flash-latest': [500]}, config: gem);
+    await f.start();
+    final out = await f.client().transcribePages([(1, Uint8List.fromList([0xFF, 0xD8, 0xFF]))]);
+    expect(out, contains('[الصفحة 1 / Page 1]'));
+    expect(f.calls, contains('g:gemini-flash-lite-latest'));
+    await f.stop();
   });
 
   test('without a proxy only the direct free server is used', () async {

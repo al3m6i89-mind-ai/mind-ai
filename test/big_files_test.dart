@@ -30,7 +30,10 @@ String book(int pages) {
 Future<Uint8List> pdf(int pages) async {
   final doc = PdfDocument();
   for (var i = 1; i <= pages; i++) {
-    doc.pages.add().graphics.drawString(i == 7 ? 'Warranty period is 24 months' : 'Chapter $i about soil and water',
+    doc.pages.add().graphics.drawString(
+        i == 7
+            ? 'Warranty period is 24 months from the date of delivery for all parts and labour.'
+            : 'Chapter $i about soil and water, seasonal crops and the irrigation of dry fields.',
         PdfStandardFont(PdfFontFamily.helvetica, 12));
   }
   final bytes = Uint8List.fromList(await doc.save());
@@ -83,6 +86,17 @@ void main() {
       final r = relevant(b.toString(), 'أين مكان العدد 3241 على خط الأعداد؟');
       expect(r.text, contains('[الصفحة 29 / Page 29]'));
       expect(r.text, contains('[الصفحة 28 / Page 28]'), reason: 'the question may start a page earlier');
+    });
+
+    test('a scanner footer on every page is not real text; typed pages are', () {
+      final scanned = {for (var i = 1; i <= 30; i++) i: 'المسوحة ضوئيا بـ CamScanner\n$i'};
+      expect(meaningfulPages(scanned), isEmpty);
+      final typed = {
+        for (var i = 1; i <= 30; i++)
+          i: 'المسوحة ضوئيا بـ CamScanner\nالمادة $i: يحرص المعلم على تنمية مهارات طلابه وتعزيز قيمهم وتشجيعهم على التعلم الذاتي.',
+      };
+      expect(meaningfulPages(typed), hasLength(30));
+      expect(pageTexts(book(5)).keys, [1, 2, 3, 4, 5]);
     });
 
     test('a small file is sent whole', () {

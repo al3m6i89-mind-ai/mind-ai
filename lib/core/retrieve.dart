@@ -228,3 +228,34 @@ Retrieved relevant(String text, String question, {String context = '', int budge
 Set<int> askedPages(String text) => {
       for (final m in _askedPage.allMatches(Conversation.fold(_digits(text)))) int.parse(m[1]!),
     };
+
+/// A PDF's text split by page (1-based), from the page marks.
+Map<int, String> pageTexts(String text) {
+  final out = <int, String>{};
+  for (final p in passages(text)) {
+    if (p.page != null) out[p.page!] = p.text.replaceFirst(_pageMark, '').trim();
+  }
+  return out;
+}
+
+/// Pages whose text is real content: lines that repeat on many pages (a
+/// scanner app's "Scanned with ..." footer, headers, page numbers) and pages
+/// with only a few letters left do not count. Scanned handwriting has none.
+Set<int> meaningfulPages(Map<int, String> pages, {int minLetters = 60}) {
+  final seen = <String, int>{};
+  for (final t in pages.values) {
+    for (final l in {...t.split('\n').map((l) => l.trim()).where((l) => l.isNotEmpty)}) {
+      seen[l] = (seen[l] ?? 0) + 1;
+    }
+  }
+  final repeated = pages.length >= 4 ? {for (final e in seen.entries) if (e.value >= pages.length * 0.3) e.key} : <String>{};
+  final letters = RegExp(r'\p{L}', unicode: true);
+  return {
+    for (final e in pages.entries)
+      if (letters
+              .allMatches(e.value.split('\n').map((l) => l.trim()).where((l) => !repeated.contains(l)).join(' '))
+              .length >=
+          minLetters)
+        e.key,
+  };
+}

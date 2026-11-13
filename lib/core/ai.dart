@@ -64,7 +64,7 @@ When files or images are attached to the conversation, every answer about them m
 - Read the whole file before answering: every page, slide, sheet, table, header, footnote and every part of an image. When the question asks for all items, totals or a list, include every one that appears.
 - Copy numbers, amounts, dates, names, codes and quotes exactly as written, with the same digits, currency and units. Never round, convert or "correct" them. If you calculate something, show the values you used in one line.
 - Never add facts, figures or assumptions that are not in the files, and never fill gaps from general knowledge. If something is partly there, give the part that is there and say what is missing.
-- Handwriting (on paper photos, scanned pages, worksheets, notes in margins, filled-in answers) is part of the file: read it as carefully as print. Work out each handwritten word from its letters and its context (the subject, the printed question next to it, the words around it) and write it in correct spelling, as the writer meant it, never letter by letter with mistakes. Copy handwritten numbers, names and answers exactly. Tell printed text and handwriting apart when it matters (for example the printed question and the student's handwritten answer).
+- Handwriting (on paper photos, scanned pages, worksheets, notes in margins, filled-in answers) is part of the file: read it as carefully as print. Work out each handwritten word from its letters and its context (the subject, the printed question next to it, the words around it) and write it in correct spelling, as the writer meant it, never letter by letter with mistakes. Copy handwritten numbers, names and answers exactly. Tell printed text and handwriting apart when it matters (for example the printed question and the student's handwritten answer). The text of scanned pages was written out from their pictures; when a page's picture is attached too, check the words and numbers you use against the picture.
 - If text or handwriting is blurry, cut off or truly unreadable, give your best reading of what you can and say which word or part is unclear, instead of inventing it.
 - If the answer is not in the files, reply exactly: "لم أجد هذه المعلومة في الملفات التي رفعتها، لذلك لا أستطيع تأكيد الإجابة." (in English: "I couldn't find this information in the files you uploaded, so I can't confirm an answer.") Do not follow it with a guess.
 - If the files contradict each other, show both values and where each appears.
@@ -698,6 +698,73 @@ class AiClient {
     }
     return (contents, slot);
   }
+
+  /// Writes out everything on the given page pictures, printed and handwritten,
+  /// page by page, with Gemini's vision (Flash, then Flash-Lite). Returns the
+  /// text with page marks, or throws [AiException].
+  Future<String> transcribePages(List<(int, Uint8List)> pages) async {
+    final parts = <Map<String, dynamic>>[
+      {'text': _transcribeInstructions},
+      for (final (n, jpg) in pages) ...[
+        {'text': '[الصفحة $n / Page $n]'},
+        {
+          'inline_data': {'mime_type': 'image/jpeg', 'data': base64Encode(jpg)},
+        },
+      ],
+    ];
+    final models = [geminiModel, 'gemini-flash-lite-latest'];
+    String? last;
+    for (final m in models.where((m) => !_isSlow(m)).followedBy(models.where(_isSlow))) {
+      final a = Attempt(Backend.gemini, m, 'g');
+      try {
+        final res = await http
+            .post(Uri.parse(_url(a, '/v1beta/models/$m:generateContent')),
+                headers: {'Content-Type': 'application/json', ..._headers(a)},
+                body: jsonEncode({
+                  'contents': [
+                    {'role': 'user', 'parts': parts},
+                  ],
+                  'generationConfig': {
+                    'temperature': 0,
+                    if (_highDetail) 'mediaResolution': 'MEDIA_RESOLUTION_HIGH',
+                    if (_thinkingBudget(m) case final b?) 'thinkingConfig': {'thinkingBudget': b},
+                  },
+                }))
+            .timeout(const Duration(seconds: 60));
+        if (res.statusCode != 200) {
+          final f = _failFor(a, res.statusCode, res.body, res.headers);
+          if (const {'quota', 'signIn', 'suspended'}.contains(f.code)) throw AiException(f.code);
+          last = f.code;
+          continue;
+        }
+        final j = jsonDecode(utf8.decode(res.bodyBytes)) as Map<String, dynamic>;
+        final cand = (j['candidates'] as List?)?.firstOrNull as Map<String, dynamic>?;
+        final text = [
+          for (final p in (cand?['content']?['parts'] as List?) ?? const [])
+            if (p is Map && p['thought'] != true && p['text'] is String) p['text'] as String,
+        ].join();
+        if (text.trim().isNotEmpty) return text;
+        last = 'empty';
+      } on TimeoutException {
+        _slow[m] = DateTime.now();
+        last = 'timeout';
+      } on AiException {
+        rethrow;
+      } catch (e) {
+        last = 'network';
+      }
+    }
+    throw AiException(last ?? 'busy');
+  }
+
+  static const _transcribeInstructions = """
+Transcribe these scanned pages exactly. Each picture follows its page mark "[الصفحة N / Page N]"; start each page's text with that same mark on its own line.
+- Write out every word on the page, printed and handwritten, in reading order (right to left for Arabic), including headings, numbered items, bullet points, tables (one row per line, cells separated by " | "), margin notes and labels.
+- Handwriting: identify each letter carefully, using the dots, letter shapes and the surrounding words and subject to decide between similar letters (ب ت ث ن ي، ج ح خ، د ذ، ر ز، س ش، ص ض، ط ظ، ع غ، ف ق، ه ة). Write each word with its correct spelling as the writer meant it. Never invent words that are not there.
+- Copy numbers, names, dates and article numbers exactly.
+- If a word is truly unreadable, write [؟] in its place.
+- Output only the transcription: no comments, no summary, no translation.
+""";
 
   /// Sent as the text read on the phone rather than the original file.
   static bool sendsText(Attachment a) =>

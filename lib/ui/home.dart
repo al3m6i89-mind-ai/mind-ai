@@ -1053,6 +1053,7 @@ class LoadProgress extends StatelessWidget {
       'prepare' => store.loadBytes > 0 ? s.t('loadPrepareMb', {'mb': mb(store.loadBytes)}) : s.t('loadPrepare'),
       'copy' => s.t('loadCopy'),
       'read' when store.loadTotal > 1 => s.t('loadPages', {'done': '${store.loadDone}', 'total': '${store.loadTotal}'}),
+      'ocr' => s.t('loadOcr', {'done': '${store.loadDone}', 'total': '${store.loadTotal}'}),
       _ => s.t('analyzing'),
     };
     final name = store.loadName ?? '';

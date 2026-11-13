@@ -15,6 +15,7 @@ import 'adblock.dart';
 import 'ai.dart';
 import 'auth.dart';
 import 'extract.dart';
+import 'retrieve.dart';
 import 'billing.dart';
 import 'updates.dart';
 import 'models.dart';
@@ -527,12 +528,13 @@ class AppStore extends ChangeNotifier {
       if (bad != null) throw AttachRejected(bad, name);
       _progress('read', copyShare);
 
-      final result = const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext)
+      var result = const {'jpg', 'jpeg', 'png', 'webp'}.contains(ext)
           ? ExtractResult(null)
           : await _extract(file.path, ext, (done, total) {
               _progress('read', copyShare + (1 - copyShare) * (total == 0 ? 1 : done / total), done: done, total: total);
             });
       _progress('read', 1);
+      if (ext == 'pdf') result = await _readHandwriting(file.path, result);
       // A big book's text gets its own file, read only when it is asked about.
       final text = result.text;
       String? textFile;
@@ -569,6 +571,67 @@ class AppStore extends ChangeNotifier {
       }
       notifyListeners();
     }
+  }
+
+  /// Scanned pages (handwriting, photos of paper) have no real text, only
+  /// perhaps a scanner app's footer. Their pictures are written out once, here,
+  /// page by page, so questions find them like any typed book.
+  static const maxHandwritingPages = 600;
+  static const handwritingBatch = 5;
+
+  Future<ExtractResult> _readHandwriting(String path, ExtractResult r) async {
+    final count = r.pages ?? 0;
+    if (count == 0) return r;
+    final byPage = pageTexts(r.text ?? '');
+    final good = meaningfulPages(byPage);
+    final todo = [for (var p = 1; p <= count; p++) if (!good.contains(p)) p];
+    final fixed = ExtractResult(r.text, note: r.note, pages: count, textPages: good.length);
+    if (todo.isEmpty || todo.length > maxHandwritingPages || !Proxy.build.enabled || auth.user == null) return fixed;
+
+    final read = <int, String>{};
+    var done = 0;
+    _progress('ocr', 0, done: 0, total: todo.length);
+    final batches = [for (var i = 0; i < todo.length; i += handwritingBatch) todo.sublist(i, min(i + handwritingBatch, todo.length))];
+    // One question id covers up to 100 requests; a longer book uses a new one.
+    final ids = <int, String>{};
+    var stop = false;
+    Future<void> work(Iterator<(int, List<int>)> next) async {
+      while (!stop && next.moveNext()) {
+        final (k, pages) = next.current;
+        try {
+          final pics = await renderPdfPages(path, pages);
+          if (pics.length == pages.length) {
+            final qid = ids[k ~/ 100] ??= _uuid.v4();
+            final client = _client(await aiSession(questionId: qid));
+            final out = await client.transcribePages([for (var i = 0; i < pages.length; i++) (pages[i], pics[i])]);
+            final got = pageTexts(out);
+            for (final p in pages) {
+              final t = got[p];
+              if (t != null && t.trim().isNotEmpty) read[p] = t.trim();
+            }
+          }
+        } on AiException catch (e) {
+          debugPrint('handwriting: ${e.message}');
+          if (const {'quota', 'signIn', 'suspended'}.contains(e.message)) stop = true;
+        } catch (e) {
+          debugPrint('handwriting: $e');
+        }
+        done += pages.length;
+        _progress('ocr', done / todo.length, done: done, total: todo.length);
+      }
+    }
+
+    final it = batches.indexed.iterator;
+    await Future.wait([for (var w = 0; w < 3; w++) work(it)]);
+    if (read.isEmpty) return fixed;
+    final merged = StringBuffer();
+    for (var p = 1; p <= count; p++) {
+      final t = good.contains(p) ? byPage[p] : read[p];
+      if (t == null || t.isEmpty) continue;
+      merged.writeln('\n${pageMark(p)}');
+      merged.writeln(t);
+    }
+    return ExtractResult(merged.toString(), pages: count, textPages: good.length + read.length);
   }
 
   static Future<Uint8List> _head(File f) async {
