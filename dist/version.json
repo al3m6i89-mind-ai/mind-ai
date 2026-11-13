@@ -1,7 +1,7 @@
 {
-  "version": "1.12.1",
-  "build": 48,
+  "version": "1.12.2",
+  "build": 49,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• ملفات PDF المكتوبة بخط اليد (مثل CamScanner) تُقرأ صفحة صفحة عند إضافتها، فيجد الجواب بدقة\n• اشتراك شهري 19.99$ وسنوي 179.99$ (توفير 25٪)\n• عرض الاشتراك في وسط الشاشة لغير المشتركين\n• بدون إعلانات للمشتركين",
-  "notes_en": "• Handwritten PDFs (e.g. CamScanner) are read page by page when added, so answers are found accurately\n• Monthly $19.99 and yearly $179.99 (save 25%)\n• Subscription offer for the free plan\n• No ads for subscribers"
+  "notes_ar": "• شارك أي ملف PDF أو صورة من واتساب أو أي تطبيق إلى «قارئ الملفات» مباشرة\n• يظهر التطبيق في «فتح باستخدام» للملفات\n• ملفات PDF المكتوبة بخط اليد تُقرأ صفحة صفحة بدقة\n• اشتراك شهري 19.99$ وسنوي 179.99$ (توفير 25٪)",
+  "notes_en": "• Share any PDF or picture from WhatsApp or any app straight to File Chat\n• The app appears in \"Open with\" for files\n• Handwritten PDFs are read page by page accurately\n• Monthly $19.99 and yearly $179.99 (save 25%)"
 }
