@@ -1,7 +1,7 @@
 {
-  "version": "1.10.3",
-  "build": 45,
+  "version": "1.11.0",
+  "build": 46,
   "url": "https://github.com/al3m6i89-mind-ai/mind-ai/raw/file-chat-app/dist/file-chat.apk",
-  "notes_ar": "• صفحة الحساب تعرض الاشتراك مدى الحياة\n• لا انتظار: إذا تأخر خادم يرد خادم آخر خلال ثوانٍ\n• يدقق في كل الملفات والصور المرفقة ويذكر مصدر كل معلومة\n• التطبيق أخف وأسرع في الفتح",
-  "notes_en": "• The account page shows lifetime plans\n• No waiting: if one server is slow another answers within seconds\n• Checks every attached file and image and names the source of each fact\n• Lighter app that opens faster"
+  "notes_ar": "• يقرأ الكتابة اليدوية في الصور وملفات PDF بدقة وبإملاء صحيح\n• يرسل صور الصفحات المهمة مع النص، فيقرأ الأختام والرسوم والملاحظات\n• ملفات PDF الممسوحة: اسأل عن صفحة برقمها ويقرأها\n• الصور تُقرأ بأعلى دقة",
+  "notes_en": "• Reads handwriting in photos and PDFs accurately, with correct spelling\n• Sends pictures of the key pages with the text, so stamps, drawings and notes are read\n• Scanned PDFs: ask about a page by number and it reads it\n• Pictures are read at full detail"
 }
