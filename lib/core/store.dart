@@ -142,6 +142,10 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The paid plan was given for life by the server: no payment, no renewal.
+  bool get lifetime => premium && (_prefs.getBool('lifetime') ?? false);
+  static final lifetimeAfter = DateTime.utc(2090).millisecondsSinceEpoch;
+
   String? _deviceId;
   final Map<String, String> _questionIds = {};
 
@@ -219,6 +223,7 @@ class AppStore extends ChangeNotifier {
     await auth.signOut();
     if (_prefs.getBool('premiumFromServer') == true) {
       await _prefs.remove('premiumFromServer');
+      await _prefs.remove('lifetime');
       _markPremium(false);
     }
     _rechecked = false;
@@ -243,10 +248,14 @@ class AppStore extends ChangeNotifier {
         if (j['plan'] == 'premium') {
           // Also the owner's accounts, which the server gives the paid plan.
           _prefs.setBool('premiumFromServer', true);
+          // A paid plan that ends after 2090 was given for life (owner or lifetime list).
+          final until = j['until'];
+          _prefs.setBool('lifetime', until is num && until > lifetimeAfter);
           _markPremium(true);
         } else if (_prefs.getBool('premiumFromServer') == true) {
           // Another account on this phone: the server's paid plan does not carry over.
           _prefs.remove('premiumFromServer');
+          _prefs.remove('lifetime');
           _markPremium(false);
           _rechecked = true;
           await billing.refresh();

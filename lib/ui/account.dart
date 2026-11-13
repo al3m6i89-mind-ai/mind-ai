@@ -119,10 +119,14 @@ class AccountScreen extends StatelessWidget {
               row(Icons.workspace_premium_outlined, s.t('plans'), s.t(premium ? 'planPremium' : 'planFree'),
                   color: premium ? gold : null),
               row(Icons.payments_outlined, s.t('fPrice'),
-                  premium ? (price == null ? s.t('monthly') : '$price / ${s.t('month')}') : s.t('free')),
+                  store.lifetime
+                      ? s.t('lifetimePrice')
+                      : premium
+                          ? (price == null ? s.t('monthly') : '$price / ${s.t('month')}')
+                          : s.t('free')),
               if (premium)
                 row(Icons.autorenew_rounded, s.t('fRenew'),
-                    owner ? s.t('ownerPlan') : s.t('renewPlay')),
+                    owner ? s.t('ownerPlan') : store.lifetime ? s.t('lifetimePlan') : s.t('renewPlay')),
               if (!owner)
               row(Icons.chat_bubble_outline_rounded, s.t('fUsedToday'),
                   premium ? '${store.questionsToday}' : '${store.questionsToday} / ${Plan.freeDailyQuestions}'),

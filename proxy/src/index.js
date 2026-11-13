@@ -298,7 +298,8 @@ export function dashboard(sql, now = Date.now()) {
 /** Quota with the limit of the account's plan. */
 export function planned(sql, body, now = Date.now()) {
   if (isBlocked(sql, body.uid)) return { ok: false, why: 'blocked', left: 0, limit: 0, plan: 'free', until: 0 };
-  const until = body.owner ? OWNER_UNTIL : premiumUntil(sql, body.uid, now);
+  // Lifetime accounts (LIFETIME_EMAILS) have the paid plan with its usual limits, and never renew.
+  const until = body.owner || body.lifetime ? OWNER_UNTIL : premiumUntil(sql, body.uid, now);
   const plan = until > now ? 'premium' : 'free';
   const limit = body.owner ? OWNER_LIMIT : LIMITS[body.kind][plan];
   const args = { ...body, limit, now };
@@ -350,6 +351,7 @@ async function admit(request, env, statusOnly = false) {
     op: statusOnly ? 'status' : 'check', uid: claims.sub, device, qid, kind,
     email: claims.email || claims.phone_number || '', provider: claims.firebase?.sign_in_provider || '',
     owner: isAdmin(claims, env),
+    lifetime: listed(claims, env.LIFETIME_EMAILS),
   });
   const headers = {
     'x-quota-left': String(r.left),
@@ -429,8 +431,13 @@ async function checkPurchase(request, env) {
 
 /** True for the owner's accounts (ADMIN_EMAILS in wrangler.toml), signed in with a confirmed address. */
 export function isAdmin(claims, env) {
-  const admins = String(env.ADMIN_EMAILS || '').toLowerCase().split(',').map((e) => e.trim()).filter(Boolean);
-  return Boolean(claims && claims.email_verified === true && admins.includes(String(claims.email || '').toLowerCase()));
+  return listed(claims, env.ADMIN_EMAILS);
+}
+
+/** True when the signed-in, confirmed address is in a comma-separated [list]. */
+export function listed(claims, list) {
+  const emails = String(list || '').toLowerCase().split(',').map((e) => e.trim()).filter(Boolean);
+  return Boolean(claims && claims.email_verified === true && emails.includes(String(claims.email || '').toLowerCase()));
 }
 
 async function adminStats(request, env) {

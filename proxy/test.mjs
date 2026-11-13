@@ -264,6 +264,16 @@ for (let i = 0; i < 25; i++) {
   assert.equal(r.status, 200, 'owner question ' + i);
 }
 
+// A lifetime account: the paid plan with its usual limit, forever, and no dashboard.
+const lifeEnv = { ...adminEnv, LIFETIME_EMAILS: 'friend@gmail.com' };
+const friendTok = await token({ sub: 'friend', email: 'Friend@gmail.com', email_verified: true, firebase: { sign_in_provider: 'google.com' } });
+j = await (await worker.fetch(req('/quota', 't', 'GET', { 'x-user-token': friendTok }), lifeEnv)).json();
+assert.deepEqual([j.plan, j.limit, j.until > Date.now() + 50 * 365 * 86400000], ['premium', 300, true]);
+assert.equal((await worker.fetch(req('/admin', 't', 'GET', { 'x-user-token': friendTok }), lifeEnv)).status, 403, 'no dashboard');
+const unconfirmedTok = await token({ sub: 'friend2', email: 'friend@gmail.com', email_verified: false, firebase: { sign_in_provider: 'password' } });
+r = await worker.fetch(req('/quota', 't', 'GET', { 'x-user-token': unconfirmedTok }), lifeEnv);
+assert.ok(r.status === 401 || (await r.json()).plan === 'free', 'an unconfirmed address does not get it');
+
 // Blocking from the dashboard.
 const adminPost = (body, tok = bossTok) => worker.fetch(new Request('https://proxy.example/admin', {
   method: 'POST', headers: { 'x-app-token': 't', 'x-user-token': tok }, body: JSON.stringify(body) }), adminEnv);
