@@ -54,6 +54,44 @@ class _HomeScreenState extends State<HomeScreen> {
     });
     store.updates.start(arabic: store.lang == 'ar');
     _launchExtras(store);
+    // Files shared to the app from WhatsApp, the file manager, etc.
+    _share.setMethodCallHandler((call) async {
+      if (call.method == 'shared') await _takeShared();
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) => _takeShared());
+  }
+
+  static const _share = MethodChannel('file_chat/share');
+  bool _taking = false;
+
+  /// Adds the files waiting from the share sheet or "Open with", like picked files.
+  Future<void> _takeShared() async {
+    if (_taking || !mounted) return;
+    _taking = true;
+    final store = context.read<AppStore>();
+    try {
+      while (mounted && ((await _share.invokeMethod<int>('pending')) ?? 0) > 0) {
+        List<Object?> files;
+        store.preparing(true);
+        try {
+          files = (await _share.invokeMethod<List<Object?>>('take')) ?? const [];
+        } finally {
+          store.preparing(false);
+        }
+        for (final f in files.whereType<Map>()) {
+          if (!mounted) return;
+          final path = '${f['path']}';
+          final file = File(path);
+          await _add('${f['name']}', await file.length(), file.openRead, movable: path);
+        }
+      }
+    } on MissingPluginException {
+      // Not on Android (tests).
+    } catch (e) {
+      debugPrint('share: $e');
+    } finally {
+      _taking = false;
+    }
   }
 
   /// After the plan is confirmed with the server: for the free plan, a

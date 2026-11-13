@@ -7,6 +7,7 @@ import android.os.Build
 import android.content.pm.PackageManager
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
+import android.provider.OpenableColumns
 import android.provider.Settings
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -31,6 +32,7 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         updatesChannel(flutterEngine)
+        shareChannel(flutterEngine)
         // PDF pages as pictures, so handwriting and drawings on them can be read.
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "file_chat/pdf").setMethodCallHandler { call, result ->
             if (call.method != "render") return@setMethodCallHandler result.notImplemented()
@@ -62,11 +64,14 @@ class MainActivity : FlutterActivity() {
 
     override fun onCreate(savedInstanceState: android.os.Bundle?) {
         openUpdate = intent?.getBooleanExtra("openUpdate", false) ?: false
+        // Not when the system recreates the activity, or the same file would be added again.
+        if (savedInstanceState == null) keepShared(intent)
         super.onCreate(savedInstanceState)
     }
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (keepShared(intent)) share?.invokeMethod("shared", null)
         if (intent.getBooleanExtra("openUpdate", false)) {
             openUpdate = true
             updates?.invokeMethod("openUpdate", null)
@@ -74,6 +79,73 @@ class MainActivity : FlutterActivity() {
     }
 
     private var updates: MethodChannel? = null
+
+    // Files shared to the app (share sheet or "Open with"), waiting for the chat to take them.
+    private val pendingShared = mutableListOf<Uri>()
+    private var share: MethodChannel? = null
+
+    private fun keepShared(intent: Intent?): Boolean {
+        val uris = safe {
+            when (intent?.action) {
+                Intent.ACTION_SEND -> listOfNotNull(stream(intent))
+                Intent.ACTION_SEND_MULTIPLE -> streams(intent)
+                Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+                else -> emptyList()
+            }
+        } ?: emptyList()
+        if (uris.isEmpty()) return false
+        synchronized(pendingShared) { pendingShared.addAll(uris) }
+        return true
+    }
+
+    @Suppress("DEPRECATION")
+    private fun stream(intent: Intent): Uri? =
+        if (Build.VERSION.SDK_INT >= 33) intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else intent.getParcelableExtra(Intent.EXTRA_STREAM)
+
+    @Suppress("DEPRECATION")
+    private fun streams(intent: Intent): List<Uri> =
+        (if (Build.VERSION.SDK_INT >= 33) intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+        else intent.getParcelableArrayListExtra<Uri>(Intent.EXTRA_STREAM)) ?: emptyList()
+
+    private fun shareChannel(engine: FlutterEngine) {
+        val ch = MethodChannel(engine.dartExecutor.binaryMessenger, "file_chat/share")
+        share = ch
+        ch.setMethodCallHandler { call, result ->
+            when (call.method) {
+                "pending" -> result.success(synchronized(pendingShared) { pendingShared.size })
+                // Copies the shared files into the app's cache: [{name, path}].
+                "take" -> {
+                    val uris = synchronized(pendingShared) { pendingShared.toList().also { pendingShared.clear() } }
+                    Thread {
+                        val out = uris.mapNotNull { safe { copyShared(it) } }
+                        runOnUiThread { result.success(out) }
+                    }.start()
+                }
+                else -> result.notImplemented()
+            }
+        }
+    }
+
+    private fun copyShared(uri: Uri): Map<String, Any> {
+        var name: String? = null
+        safe {
+            contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { c ->
+                if (c.moveToFirst()) name = c.getString(0)
+            }
+        }
+        if (name.isNullOrBlank()) name = uri.lastPathSegment?.substringAfterLast('/')
+        var n = (name ?: "file").replace(Regex("[/\\\\:*?\"<>|]"), "_")
+        if (!n.contains('.')) {
+            val ext = android.webkit.MimeTypeMap.getSingleton().getExtensionFromMimeType(contentResolver.getType(uri) ?: "")
+            if (ext != null) n = "$n.$ext"
+        }
+        // Inside file_picker/ so the chat moves this copy instead of copying it again.
+        val dir = File(cacheDir, "file_picker/shared_${System.nanoTime()}").apply { mkdirs() }
+        val file = File(dir, n)
+        contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it, 1 shl 16) } }
+        return mapOf("name" to n, "path" to file.path)
+    }
 
     private fun updatesChannel(engine: FlutterEngine) {
         val ch = MethodChannel(engine.dartExecutor.binaryMessenger, "file_chat/updates")
