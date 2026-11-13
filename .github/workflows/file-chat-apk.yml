@@ -102,6 +102,8 @@ jobs:
   build:
     needs: proxy
     runs-on: ubuntu-latest
+    env:
+      ADMOB_APP_ID: ${{ secrets.ADMOB_APP_ID }}
     timeout-minutes: 40
     steps:
       - uses: actions/checkout@v4
@@ -122,6 +124,7 @@ jobs:
           flutter build apk --release --target-platform android-arm64 --build-number=${{ github.run_number }}
           --dart-define=PROXY_URL=${{ needs.proxy.outputs.url }}
           --dart-define=APP_TOKEN=${{ secrets.APP_TOKEN }}
+          --dart-define=ADMOB_INTERSTITIAL=${{ secrets.ADMOB_INTERSTITIAL }}
       # The release key is kept by the owner, not in this public repo: the unsigned APK is
       # committed to dist/ and signed outside CI.
       - name: Commit unsigned APK
@@ -146,6 +149,7 @@ jobs:
           flutter build apk --release --target-platform android-x64 --build-number=${{ github.run_number }}
           --dart-define=PROXY_URL=${{ needs.proxy.outputs.url }}
           --dart-define=APP_TOKEN=${{ secrets.APP_TOKEN }}
+          --dart-define=ADMOB_INTERSTITIAL=${{ secrets.ADMOB_INTERSTITIAL }}
       - uses: actions/upload-artifact@v4
         with:
           name: file-chat-x64-apk

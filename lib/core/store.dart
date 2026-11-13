@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
@@ -77,6 +78,7 @@ class AppStore extends ChangeNotifier {
     final store = AppStore(prefs, root, auth: await Auth.start());
     store.auth.languageCode = store.lang;
     await store._load();
+    store._countLaunch();
     unawaited(store.billing.start());
     return store;
   }
@@ -87,6 +89,33 @@ class AppStore extends ChangeNotifier {
   /// Set from what Google Play reports (see [Billing]) and what the proxy
   /// confirmed with Google; the proxy alone decides the paid limits.
   bool get premium => _prefs.getBool('premium') ?? false;
+
+  // ---------- free plan: ads and the subscription offer ----------
+  /// How many times the app has been opened.
+  int get launches => _prefs.getInt('launches') ?? 0;
+
+  void _countLaunch() {
+    _prefs.setInt('launches', launches + 1);
+    if (_prefs.getInt('nextAd') == null) _scheduleAd();
+  }
+
+  void _scheduleAd() => _prefs.setInt(
+      'nextAd', launches + Plan.adEveryMin + Random().nextInt(Plan.adEveryMax - Plan.adEveryMin + 1));
+
+  /// The free plan shows a full-screen ad once every 10 to 15 openings.
+  bool get adDue => !premium && launches >= (_prefs.getInt('nextAd') ?? 1 << 30);
+  void adShown() => _scheduleAd();
+
+  /// The subscription offer opens in the middle of the screen for the free
+  /// plan, from the second opening on, at most once every [promoEvery].
+  static const promoEvery = Duration(hours: 6);
+  bool get promoDue {
+    if (premium || launches < 2) return false;
+    final last = DateTime.fromMillisecondsSinceEpoch(_prefs.getInt('promoAt') ?? 0);
+    return DateTime.now().difference(last) >= promoEvery;
+  }
+
+  void promoShown() => _prefs.setInt('promoAt', DateTime.now().millisecondsSinceEpoch);
   void _markPremium(bool v) {
     if (v == premium) return;
     _prefs.setBool('premium', v);

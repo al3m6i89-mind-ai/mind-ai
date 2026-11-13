@@ -169,7 +169,9 @@ for (const path of ['/privacy', '/delete']) {
 
 // Subscriptions.
 const tnow = Date.now();
-const item = (ms) => [{ productId: PRODUCT, expiryTime: new Date(tnow + ms).toISOString() }];
+const item = (ms, productId = PRODUCT) => [{ productId, expiryTime: new Date(tnow + ms).toISOString() }];
+assert.ok(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: item(86400000, 'file_chat_premium_yearly') }, tnow) > tnow, 'the yearly plan counts');
+assert.equal(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: item(86400000, 'other') }, tnow), 0, 'other products do not');
 assert.ok(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_ACTIVE', lineItems: item(86400000) }, tnow) > tnow);
 assert.ok(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_CANCELED', lineItems: item(86400000) }, tnow) > tnow, 'cancelled keeps access until the end');
 assert.equal(subscriptionUntil({ subscriptionState: 'SUBSCRIPTION_STATE_EXPIRED', lineItems: item(86400000) }, tnow), 0);

@@ -19,15 +19,24 @@ class Billing {
   // Touched only inside try blocks: it talks to the Play Store as soon as it is created.
   late final _iap = InAppPurchase.instance;
   StreamSubscription<List<PurchaseDetails>>? _sub;
-  ProductDetails? product;
+
+  /// The monthly and yearly subscriptions as Google Play lists them (prices in the user's currency).
+  final Map<String, ProductDetails> products = {};
+  ProductDetails? get product => products[Plan.monthlyId];
+
+  Future<void> _load() async {
+    final res = await _iap.queryProductDetails(Plan.productIds);
+    for (final p in res.productDetails) {
+      products[p.id] = p;
+    }
+  }
 
   Future<void> start() async {
     try {
       if (!await _iap.isAvailable()) return;
       _sub = _iap.purchaseStream.listen(_onPurchases, onError: (_) {});
       await refresh();
-      final res = await _iap.queryProductDetails({Plan.productId});
-      product = res.productDetails.firstOrNull;
+      await _load();
     } catch (_) {
       // No Play Store on this device (or tests): the app stays on the free plan.
     }
@@ -40,7 +49,7 @@ class Billing {
       final android = _iap.getPlatformAddition<InAppPurchaseAndroidPlatformAddition>();
       final res = await android.queryPastPurchases();
       if (res.error != null) return null;
-      final mine = res.pastPurchases.where((p) => p.productID == Plan.productId && p.status != PurchaseStatus.error);
+      final mine = res.pastPurchases.where((p) => Plan.productIds.contains(p.productID) && p.status != PurchaseStatus.error);
       final active = mine.isNotEmpty;
       await onPremiumChanged(active, active ? mine.first.verificationData.serverVerificationData : null);
       for (final p in res.pastPurchases) {
@@ -52,14 +61,12 @@ class Billing {
     }
   }
 
-  Future<BillingResult> buy() async {
+  /// Starts buying [id] (monthly by default).
+  Future<BillingResult> buy([String id = Plan.monthlyId]) async {
     try {
       if (!await _iap.isAvailable()) return BillingResult.notAvailable;
-      if (product == null) {
-        final res = await _iap.queryProductDetails({Plan.productId});
-        product = res.productDetails.firstOrNull;
-      }
-      final p = product;
+      if (products[id] == null) await _load();
+      final p = products[id];
       if (p == null) return BillingResult.notPublished;
       final ok = await _iap.buyNonConsumable(purchaseParam: PurchaseParam(productDetails: p));
       return ok ? BillingResult.started : BillingResult.error;
@@ -76,7 +83,7 @@ class Billing {
 
   Future<void> _onPurchases(List<PurchaseDetails> list) async {
     for (final p in list) {
-      if (p.productID != Plan.productId) continue;
+      if (!Plan.productIds.contains(p.productID)) continue;
       if (p.status == PurchaseStatus.purchased || p.status == PurchaseStatus.restored) {
         await onPremiumChanged(true, p.verificationData.serverVerificationData);
       }

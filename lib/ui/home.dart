@@ -8,6 +8,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 
+import '../core/ads.dart';
 import '../core/models.dart';
 import '../core/plan.dart';
 import '../core/store.dart';
@@ -52,7 +53,26 @@ class _HomeScreenState extends State<HomeScreen> {
       if (mounted && store.updates.hasUpdate) showUpdateSheet(context, store.updates, s);
     });
     store.updates.start(arabic: store.lang == 'ar');
-    store.syncQuota();
+    _launchExtras(store);
+  }
+
+  /// After the plan is confirmed with the server: for the free plan, a
+  /// full-screen ad every 10 to 15 openings, otherwise the subscription offer
+  /// in the middle of the screen (at most every few hours).
+  Future<void> _launchExtras(AppStore store) async {
+    try {
+      await store.syncQuota().timeout(const Duration(seconds: 6));
+    } catch (_) {}
+    await Future<void>.delayed(const Duration(milliseconds: 800));
+    if (!mounted || store.premium) return;
+    if (store.adDue && Ads.configured) {
+      if (await Ads.showInterstitial()) store.adShown();
+      return;
+    }
+    if (store.promoDue && ModalRoute.of(context)?.isCurrent == true) {
+      store.promoShown();
+      await showPromo(context);
+    }
   }
 
   @override

@@ -1,7 +1,7 @@
 import { PAGES } from './pages.js';
 // Constants live in their own module: everything the main module exports must be a
 // handler or a function for the Workers runtime.
-import { PACKAGE, PRODUCT } from './play.js';
+import { PACKAGE, PRODUCTS } from './play.js';
 
 // File Chat proxy: keeps the AI services' keys on the server and forwards the
 // app's requests, adding a key. Bodies are streamed through, not parsed, so
@@ -399,7 +399,7 @@ async function playAccessToken(env, now = Date.now()) {
 export function subscriptionUntil(sub, now = Date.now()) {
   const states = ['SUBSCRIPTION_STATE_ACTIVE', 'SUBSCRIPTION_STATE_IN_GRACE_PERIOD', 'SUBSCRIPTION_STATE_CANCELED'];
   if (!sub || !states.includes(sub.subscriptionState)) return 0;
-  const item = (sub.lineItems || []).find((l) => l.productId === PRODUCT);
+  const item = (sub.lineItems || []).find((l) => PRODUCTS.includes(l.productId));
   const until = item ? Date.parse(item.expiryTime) : 0;
   return until > now ? until : 0;
 }

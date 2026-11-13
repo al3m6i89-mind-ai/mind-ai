@@ -33,7 +33,8 @@ How to use:
 
 Plans:
 - Free: ${Plan.freeDailyQuestions} questions per day (resets at midnight), files up to ${Plan.freeMaxFileBytes ~/ (1024 * 1024)} MB, and the ad blocker on the phone must be turned off for the app to work.
-- Premium: \$4.99 per month through Google Play: up to 300 questions per day, files up to ${Plan.premiumMaxFileBytes ~/ (1024 * 1024)} MB, no need to turn off the ad blocker, answers keep coming when the service is busy. Subscribe from "Subscribe" in the side menu or Settings → Subscription. Cancel or manage it in Google Play → Payments & subscriptions. "Restore subscription" on the plans page brings back a subscription after reinstalling.
+- Free plan: shows a full-screen ad once every 10 to 15 openings of the app.
+- Premium: \$19.99 per month, or \$179.99 per year (saves 25%), through Google Play: no ads, up to 300 questions per day, reads handwriting and big books, files up to ${Plan.premiumMaxFileBytes ~/ (1024 * 1024)} MB, no need to turn off the ad blocker, answers keep coming when the service is busy. Subscribe from "Subscribe" in the side menu or Settings → Subscription. Cancel or manage it in Google Play → Payments & subscriptions. "Restore subscription" on the plans page brings back a subscription after reinstalling.
 
 Ad blocker message: on the free plan the app asks to turn off ad blockers. To turn off: Settings → Network & internet → Private DNS → Automatic or Off; and pause apps like AdGuard, Blokada or ad-blocking VPNs. Then tap "I turned it off, check again".
 

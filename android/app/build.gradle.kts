@@ -28,6 +28,9 @@ android {
         // flag during build.
         versionCode = flutter.versionCode
         versionName = flutter.versionName
+        // AdMob app ID from CI (secret ADMOB_APP_ID); Google's sample ID until the real one is set.
+        manifestPlaceholders["admobAppId"] =
+            System.getenv("ADMOB_APP_ID")?.takeIf { it.isNotBlank() } ?: "ca-app-pub-3940256099942544~3347511713"
     }
 
     // The release key is never committed. Put android/key.properties next to the
